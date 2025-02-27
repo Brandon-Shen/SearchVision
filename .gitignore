@@ -163,3 +163,4 @@ cython_debug/
 dataset/train/images
 dataset/train/labels
 app_logs.txt
+.aider*

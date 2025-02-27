@@ -1,4 +1,4 @@
-names: []
-nc: 0
-train: C:\Users\Brandon Shen\Documents\SearchVision\dataset\train\labels
-val: C:\Users\Brandon Shen\Documents\SearchVision\dataset\train\labels
+names: ['class1', 'class2']  # Replace with actual class names
+nc: 2  # Update with the actual number of classes
+train: C:\Users\Brandon Shen\Documents\SearchVision\dataset\train\images
+val: C:\Users\Brandon Shen\Documents\SearchVision\dataset\train\images

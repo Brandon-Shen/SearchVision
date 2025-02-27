@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, Form, HTTPException
+from fastapi import FastAPI, Form, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import logging
@@ -14,6 +14,7 @@ from src.scrape_similar import scrape_similar_images
 # Import your create_data_yaml function
 from src.create_data_yaml import create_data_yaml
 import shutil
+from src.utils.annotation_converter import convert_to_yolo_format, ensure_directory
 
 # Paths to the directories
 images_path = "dataset/train/images"
@@ -81,6 +82,60 @@ async def search(query: str = Form(...)):
     try:
         api_key = os.getenv("GOOGLE_API_KEY")
         search_engine_id = os.getenv("SEARCH_ENGINE_ID")
+        original_query = query
+        images = search_images(query, api_key, search_engine_id)
+
+        # Filter the most dissimilar images
+        selected_images = select_most_dissimilar_images(images, 9)
+
+        # Create a more detailed selection interface
+        html_content = f"""
+        <html>
+        <head>
+            <style>
+                .image-container {{ display: inline-block; margin: 10px; text-align: center; }}
+                .image-preview {{ max-width: 200px; max-height: 200px; }}
+                .selected {{ border: 3px solid green; }}
+            </style>
+            <script>
+                function toggleSelection(checkbox) {{
+                    var container = checkbox.parentElement;
+                    container.classList.toggle('selected', checkbox.checked);
+                }}
+            </script>
+        </head>
+        <body>
+            <h2>Select the images that best represent: {query}</h2>
+            <p>Please choose images that clearly show the object you want to detect.</p>
+            <form action='/select' method='post'>
+                <input type='hidden' name='original_query' value='{original_query}'>
+                {generate_image_previews(selected_images)}
+                <br>
+                <button type='submit'>Use Selected Images for Training</button>
+            </form>
+        </body>
+        </html>
+        """
+        return html_content
+    except Exception as e:
+        logger.error(f"Error during image search: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+def generate_image_previews(images):
+    return "\n".join([
+        f"""
+        <div class='image-container'>
+            <img src='{url}' class='image-preview'><br>
+            <input type='checkbox' name='selected_images' value='{url}'
+                   onchange='toggleSelection(this)'>
+            <br>Select this image
+        </div>
+        """ for url in images
+    ])
+
+    try:
+        api_key = os.getenv("GOOGLE_API_KEY")
+        search_engine_id = os.getenv("SEARCH_ENGINE_ID")
         original_query = query  # Store original query
         images = search_images(query, api_key, search_engine_id)
 
@@ -104,7 +159,8 @@ async def search(query: str = Form(...)):
 @app.post("/select", response_class=HTMLResponse)
 async def select(
         selected_images: list[str] = Form(...),
-        original_query: str = Form(...)):
+        original_query: str = Form(...),
+        model_type: str = Query('yolov8', enum=['yolov5', 'yolov8'])):
     try:
         if not selected_images:
             raise HTTPException(status_code=400, detail="No images selected.")
@@ -213,59 +269,97 @@ async def select(
 async def save_annotations(
         image_urls: list[str] = Form(...),
         annotations: list[str] = Form(...),
-        original_query: str = Form(...)):
+        original_query: str = Form(...),
+        model_type: str = Query('yolov8', enum=['yolov5', 'yolov8'])):
     try:
-        # Save the annotations as JSON containing bounding box coordinates
-        annotations_path = "dataset/train/labels"
-        os.makedirs(annotations_path, exist_ok=True)
-
-        for image_url, annotation in zip(image_urls, annotations):
-            image_name = os.path.basename(image_url)
-            annotation_file = os.path.join(
-                annotations_path, image_name.replace(
-                    '.jpg', '.json'))
-
-            with open(annotation_file, 'w') as f:
-                f.write(annotation)
-
-        logger.info("Annotations saved, proceeding to scrape similar images")
-
-        # Scrape similar images
+        # Create directories
+        dataset_dir = "dataset"
+        images_dir = os.path.join(dataset_dir, "train", "images")
+        labels_dir = os.path.join(dataset_dir, "train", "labels")
+        ensure_directory(labels_dir)
+        
+        # Process user annotations (convert from canvas JSON to YOLO format)
+        logger.info(f"Processing {len(annotations)} user annotations")
+        for image_url, annotation_json in zip(image_urls, annotations):
+            try:
+                # Get image path
+                image_name = os.path.basename(image_url)
+                image_path = os.path.join(images_dir, image_name)
+                
+                # Get image dimensions
+                with Image.open(image_path) as img:
+                    img_width, img_height = img.size
+                
+                # Convert annotation to YOLO format
+                yolo_annotation = convert_to_yolo_format(annotation_json, img_width, img_height)
+                
+                # Save YOLO annotation
+                label_filename = os.path.splitext(image_name)[0] + ".txt"
+                label_path = os.path.join(labels_dir, label_filename)
+                
+                with open(label_path, 'w') as f:
+                    f.write(yolo_annotation)
+                
+                logger.info(f"Converted annotation for {image_name} to YOLO format")
+                
+            except Exception as e:
+                logger.error(f"Error processing annotation for {image_url}: {e}")
+        
+        # Scrape and download similar images
         api_key = os.getenv("GOOGLE_API_KEY")
         search_engine_id = os.getenv("SEARCH_ENGINE_ID")
-
-        logger.info("Starting to scrape similar images")
+        
+        logger.info(f"Scraping similar images for query: {original_query}")
         similar_images = scrape_similar_images(
             image_urls,
             original_query,
             api_key,
             search_engine_id,
-            num_results_per_image=20,
-            total_images_to_download=50)
-        logger.info(f"Scraped similar images: {similar_images}")
-
-        # Download similar images
-        logger.info("Downloading similar images")
-        download_images(similar_images, "dataset/train/images")
-        logger.info("Similar images downloaded successfully")
-
-        # Auto-annotate the newly fetched images
+            num_results_per_image=10,
+            total_images_to_download=30  # Reduced for faster processing
+        )
+        
+        # Download images
+        logger.info(f"Downloading {len(similar_images)} similar images")
+        download_images(similar_images, images_dir)
+        
+        # Auto-annotate similar images
         logger.info("Auto-annotating similar images")
-        auto_annotate_images("dataset/train/images", annotations_path)
-        logger.info("Auto-annotation completed successfully")
-
-        # Create the data.yaml file based on the annotations
-        logger.info("Creating data.yaml file")
-        create_data_yaml(annotations_path)
-
-        # Train the YOLO model with the annotated dataset
-        logger.info("Starting model training")
-        data_yaml_path = "dataset/data.yaml"
-        train_model(data_yaml_path)
-        logger.info("Model training completed successfully")
-
-        return "<html><body><h2>Model Training Complete. Your YOLOv8 model is ready!</h2></body></html>"
-
+        auto_annotate_images(images_dir, labels_dir)
+        
+        # Create data.yaml config file
+        logger.info("Creating YAML configuration")
+        data_yaml_path = create_data_yaml(labels_dir, original_query)
+        
+        # Train model
+        logger.info(f"Training {model_type} model")
+        model_path = train_model(data_yaml_path, model_type)
+        
+        if model_path and os.path.exists(model_path):
+            return f"""
+            <html>
+            <body>
+                <h1>Training Complete!</h1>
+                <p>Your model has been trained to detect: <strong>{original_query}</strong></p>
+                <p>Model saved at: {model_path}</p>
+                <a href="/" class="button">Train Another Model</a>
+            </body>
+            </html>
+            """
+        else:
+            return f"""
+            <html>
+            <body>
+                <h1>Training Error</h1>
+                <p>There was a problem during model training. Check the logs for details.</p>
+                <a href="/" class="button">Try Again</a>
+            </body>
+            </html>
+            """
+    
     except Exception as e:
-        logger.error(f"Error during annotation or model training: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+        logger.error(f"Error during model training process: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error in model training process: {str(e)}"
+        )

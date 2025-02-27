@@ -10,37 +10,33 @@ def scrape_similar_images(
         total_images_to_download=50):
     similar_images = []
 
-    # Fallback query keywords if the original search fails
+    # Enhanced fallback queries for better results
     fallback_queries = [
-        f"{original_query} object",
-        f"high quality {original_query}"]
+        f"{original_query} clear photo",
+        f"{original_query} high resolution",
+        f"{original_query} isolated",
+        f"{original_query} product photo",
+        f"{original_query} professional photo"
+    ]
 
-    # Iterate over each selected image and use a descriptive search
-    for url in selected_image_urls:
-        # Step 1: Use the original query to search for more images
-        images = search_images(
-            original_query,
-            api_key,
-            search_engine_id,
-            num_results=num_results_per_image)
-        similar_images.extend(images)
+    # Add specific filters to the query
+    base_query = f"{original_query} filetype:jpg OR filetype:png"
+    images = search_images(base_query, api_key, search_engine_id, num_results=num_results_per_image)
+    similar_images.extend(images)
 
-        # If we haven't downloaded enough images yet, use fallback queries
-        for fallback_query in fallback_queries:
-            if len(similar_images) >= total_images_to_download:
-                break  # Stop if we have enough images
-
-            # Step 2: Perform fallback search
-            fallback_images = search_images(
-                fallback_query,
-                api_key,
-                search_engine_id,
-                num_results=num_results_per_image)
-            similar_images.extend(fallback_images)
-
-        # Stop if we have downloaded enough images
+    # Use fallback queries only if needed
+    for fallback_query in fallback_queries:
         if len(similar_images) >= total_images_to_download:
             break
 
-    # Limit the number of images to `total_images_to_download`
+        fallback_images = search_images(
+            f"{fallback_query} filetype:jpg OR filetype:png",
+            api_key,
+            search_engine_id,
+            num_results=num_results_per_image)
+        similar_images.extend(fallback_images)
+
+    # Remove duplicates while preserving order
+    similar_images = list(dict.fromkeys(similar_images))
+    
     return similar_images[:total_images_to_download]
