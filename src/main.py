@@ -11,7 +11,7 @@ from src.search_images import search_images
 from src.search_most_dissimilar_images import select_most_dissimilar_images
 from src.train_model import train_model
 from src.scrape_similar import scrape_similar_images
-# Import your create_data_yaml function
+from PIL import Image
 from src.create_data_yaml import create_data_yaml
 import shutil
 from src.utils.annotation_converter import convert_to_yolo_format, ensure_directory
@@ -132,28 +132,6 @@ def generate_image_previews(images):
         </div>
         """ for url in images
     ])
-
-    try:
-        api_key = os.getenv("GOOGLE_API_KEY")
-        search_engine_id = os.getenv("SEARCH_ENGINE_ID")
-        original_query = query  # Store original query
-        images = search_images(query, api_key, search_engine_id)
-
-        # Filter the 9 most dissimilar images
-        selected_images = select_most_dissimilar_images(images, 9)
-
-        # Display the images to the user for selection and pass
-        # `original_query`
-        html_content = f"<html><body><h2>Select the images that contain the object: {query}</h2><form action='/select' method='post'>"
-        # Pass original query
-        html_content += f"<input type='hidden' name='original_query' value='{original_query}'>"
-        for image_url in selected_images:
-            html_content += f"<img src='{image_url}' width='200'><input type='checkbox' name='selected_images' value='{image_url}'><br>"
-        html_content += "<button type='submit'>Annotate Selected Images</button></form></body></html>"
-        return html_content
-    except Exception as e:
-        logger.error(f"Error during image search: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
 @app.post("/select", response_class=HTMLResponse)

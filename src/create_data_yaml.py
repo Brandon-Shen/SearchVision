@@ -12,21 +12,23 @@ def create_data_yaml(annotations_path, object_name="object"):
     Returns:
         Path to the created YAML file
     """
-    # Base dataset directory
-    dataset_dir = os.path.dirname(os.path.dirname(annotations_path))
+    # Use absolute paths
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(annotations_path)))
+    train_images_path = os.path.join(base_dir, "train", "images")
+    train_labels_path = os.path.join(base_dir, "train", "labels")
     
-    # Dataset structure expected by YOLOv8
+    # Dataset structure expected by YOLOv8 with absolute paths
     data = {
-        'path': dataset_dir,
-        'train': 'train/images',
-        'val': 'train/images',  # Using same images for validation
+        'path': base_dir,  # Absolute base path
+        'train': train_images_path,  # Absolute train images path
+        'val': train_images_path,  # Using same images for validation
         'names': {
             0: object_name  # Single class detection
         }
     }
     
     # Create the YAML file
-    yaml_path = os.path.join(dataset_dir, 'data.yaml')
+    yaml_path = os.path.join(base_dir, 'data.yaml')
     with open(yaml_path, 'w') as f:
         yaml.dump(data, f, sort_keys=False, default_flow_style=False)
     

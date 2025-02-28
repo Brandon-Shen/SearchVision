@@ -1,4 +1,5 @@
-names: ['class1', 'class2']  # Replace with actual class names
-nc: 2  # Update with the actual number of classes
+path: C:\Users\Brandon Shen\Documents\SearchVision\dataset
 train: C:\Users\Brandon Shen\Documents\SearchVision\dataset\train\images
 val: C:\Users\Brandon Shen\Documents\SearchVision\dataset\train\images
+names:
+  0: basketball
