@@ -2,6 +2,7 @@ from src.train_model import train_model
 import os
 import pytest
 
+
 def test_train_model():
     """Test the train_model function with sample data."""
     # Create test data.yaml

@@ -21,7 +21,11 @@ def scrape_similar_images(
 
     # Add specific filters to the query
     base_query = f"{original_query} filetype:jpg OR filetype:png"
-    images = search_images(base_query, api_key, search_engine_id, num_results=num_results_per_image)
+    images = search_images(
+        base_query,
+        api_key,
+        search_engine_id,
+        num_results=num_results_per_image)
     similar_images.extend(images)
 
     # Use fallback queries only if needed
@@ -38,5 +42,5 @@ def scrape_similar_images(
 
     # Remove duplicates while preserving order
     similar_images = list(dict.fromkeys(similar_images))
-    
+
     return similar_images[:total_images_to_download]
