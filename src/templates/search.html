@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}Search - SearchVision{% endblock %}
+
+{% block styles %}
+.search-box {
+    max-width: 600px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.search-form {
+    display: flex;
+    gap: 12px;
+    margin-top: 30px;
+}
+
+.search-input {
+    flex: 1;
+    padding: 16px 20px;
+    font-size: 1.1rem;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    outline: none;
+    transition: border-color 0.3s;
+}
+
+.search-input:focus {
+    border-color: #667eea;
+}
+
+.search-btn {
+    padding: 16px 32px;
+    font-size: 1.1rem;
+}
+
+.features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 24px;
+    margin-top: 50px;
+}
+
+.feature-card {
+    padding: 24px;
+    background: #f8f9fa;
+    border-radius: 12px;
+    text-align: center;
+    transition: transform 0.2s;
+}
+
+.feature-card:hover {
+    transform: translateY(-4px);
+}
+
+.feature-icon {
+    font-size: 3rem;
+    margin-bottom: 16px;
+}
+
+.feature-card h3 {
+    color: #333;
+    margin-bottom: 8px;
+}
+
+.feature-card p {
+    color: #666;
+    font-size: 0.95rem;
+}
+{% endblock %}
+
+{% block content %}
+<div class="search-box">
+    <h2>What would you like to detect?</h2>
+    <p style="color: #666; margin-top: 10px;">Enter any object to train a custom detection model</p>
+    
+    <form action="/search" method="post" class="search-form">
+        <input type="text" name="query" class="search-input" placeholder="e.g., coffee cup, car, flower..." required>
+        <button type="submit" class="btn search-btn">Search Images</button>
+    </form>
+</div>
+
+<div class="features">
+    <div class="feature-card">
+        <div class="feature-icon">🔍</div>
+        <h3>Search Images</h3>
+        <p>Find relevant images using Google Custom Search</p>
+    </div>
+    <div class="feature-card">
+        <div class="feature-icon">✏️</div>
+        <h3>Annotate</h3>
+        <p>Draw bounding boxes on selected images</p>
+    </div>
+    <div class="feature-card">
+        <div class="feature-icon">🤖</div>
+        <h3>Auto-Train</h3>
+        <p>Automatically scrape more data and train YOLOv8</p>
+    </div>
+</div>
+{% endblock %}

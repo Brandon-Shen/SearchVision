@@ -4,3 +4,9 @@ requests
 beautifulsoup4
 ultralytics
 python-multipart
+torch
+torchvision
+numpy
+scikit-learn
+pillow
+python-dotenv

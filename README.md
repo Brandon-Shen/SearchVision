@@ -53,6 +53,7 @@ SearchVision is designed to provide a seamless experience for users to perform i
 ## Contributing
 
 We welcome contributions! If you're interested in contributing to SearchVision, please read our [CONTRIBUTING.md](CONTRIBUTING.md) file for guidelines on how to get started.
+You can also give feedback [here](https://feedbackflux.vercel.app/brandonshen123@gmail.com/b/SearchVision)
 
 ## License
 

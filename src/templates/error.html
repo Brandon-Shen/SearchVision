@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Error - SearchVision{% endblock %}
+
+{% block styles %}
+.error-container {
+    max-width: 600px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.error-icon {
+    font-size: 4rem;
+    margin-bottom: 20px;
+}
+
+.error-message {
+    background: #fee;
+    border: 1px solid #fcc;
+    border-radius: 12px;
+    padding: 24px;
+    margin: 24px 0;
+    text-align: left;
+}
+
+.error-message h3 {
+    color: #c33;
+    margin-bottom: 10px;
+}
+
+.error-message p {
+    color: #666;
+    word-break: break-word;
+}
+{% endblock %}
+
+{% block content %}
+<div class="error-container">
+    <div class="error-icon">⚠️</div>
+    <h2>Something went wrong</h2>
+    
+    <div class="error-message">
+        <h3>Error Details:</h3>
+        <p>{{ error }}</p>
+    </div>
+    
+    <a href="/" class="btn">Try Again</a>
+</div>
+{% endblock %}
