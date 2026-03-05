@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}Training - SearchVision{% endblock %}
+
+{% block styles %}
+.progress-container {
+    max-width: 600px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.progress-card {
+    background: #f8f9fa;
+    border-radius: 16px;
+    padding: 40px;
+    margin-top: 30px;
+}
+
+.spinner {
+    width: 80px;
+    height: 80px;
+    border: 4px solid #e0e0e0;
+    border-top-color: #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 30px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.progress-status {
+    font-size: 1.3rem;
+    color: #333;
+    margin-bottom: 10px;
+}
+
+.progress-detail {
+    color: #666;
+    font-size: 0.95rem;
+}
+
+.progress-steps {
+    margin-top: 30px;
+    text-align: left;
+}
+
+.step {
+    display: flex;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.step:last-child {
+    border-bottom: none;
+}
+
+.step-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 15px;
+    font-size: 0.9rem;
+}
+
+.step.pending .step-icon {
+    background: #e0e0e0;
+    color: #999;
+}
+
+.step.active .step-icon {
+    background: #667eea;
+    color: white;
+    animation: pulse 1.5s infinite;
+}
+
+.step.completed .step-icon {
+    background: #38ef7d;
+    color: white;
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+}
+
+.step-label {
+    color: #666;
+}
+
+.step.pending .step-label {
+    color: #999;
+}
+{% endblock %}
+
+{% block content %}
+<div class="progress-container">
+    <h2>Training Your Model</h2>
+    <p style="color: #666; margin-top: 10px;">Detecting: <strong>{{ query }}</strong></p>
+    
+    <div class="progress-card">
+        <div class="spinner"></div>
+        <div class="progress-status" id="status">Initializing...</div>
+        <div class="progress-detail" id="detail">Please wait while we process your images</div>
+        
+        <div class="progress-steps">
+            <div class="step active" id="step-download">
+                <div class="step-icon">1</div>
+                <div class="step-label">Downloading selected images</div>
+            </div>
+            <div class="step pending" id="step-scrape">
+                <div class="step-icon">2</div>
+                <div class="step-label">Scraping similar images</div>
+            </div>
+            <div class="step pending" id="step-annotate">
+                <div class="step-icon">3</div>
+                <div class="step-label">Auto-annotating images</div>
+            </div>
+            <div class="step pending" id="step-train">
+                <div class="step-icon">4</div>
+                <div class="step-label">Training YOLOv8 model</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function checkProgress() {
+    try {
+        const response = await fetch('/training-status');
+        const data = await response.json();
+        
+        document.getElementById('status').textContent = data.status;
+        document.getElementById('detail').textContent = data.detail || '';
+        
+        const steps = ['download', 'scrape', 'annotate', 'train'];
+        steps.forEach((step, idx) => {
+            const el = document.getElementById('step-' + step);
+            if (data.step > idx) {
+                el.className = 'step completed';
+                el.querySelector('.step-icon').textContent = '✓';
+            } else if (data.step === idx) {
+                el.className = 'step active';
+                el.querySelector('.step-icon').textContent = idx + 1;
+            } else {
+                el.className = 'step pending';
+                el.querySelector('.step-icon').textContent = idx + 1;
+            }
+        });
+        
+        if (data.completed) {
+            if (data.success) {
+                window.location.href = '/results?model=' + encodeURIComponent(data.model_path);
+            } else {
+                window.location.href = '/error?message=' + encodeURIComponent(data.error);
+            }
+        }
+    } catch (e) {
+        console.error('Error checking progress:', e);
+    }
+}
+
+setInterval(checkProgress, 2000);
+checkProgress();
+</script>
+{% endblock %}

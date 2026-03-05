@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+
+{% block title %}Annotate - SearchVision{% endblock %}
+
+{% block styles %}
+.annotation-info {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.annotation-info h2 {
+    color: #333;
+    margin-bottom: 10px;
+}
+
+.annotation-info p {
+    color: #666;
+}
+
+.annotation-container {
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.canvas-wrapper {
+    background: #f8f9fa;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.canvas-wrapper h3 {
+    margin-bottom: 15px;
+    color: #333;
+}
+
+canvas {
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    cursor: crosshair;
+    max-width: 100%;
+}
+
+.annotation-tools {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.tool-btn {
+    padding: 10px 20px;
+    background: white;
+    border: 2px solid #ddd;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+}
+
+.tool-btn:hover {
+    border-color: #667eea;
+}
+
+.tool-btn.active {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+}
+
+.instructions {
+    background: #e8f4f8;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+    font-size: 0.9rem;
+    color: #333;
+}
+
+.instructions h4 {
+    margin-bottom: 8px;
+    color: #667eea;
+}
+
+.nav-buttons {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 30px;
+}
+
+.skip-btn {
+    background: #6c757d;
+}
+{% endblock %}
+
+{% block content %}
+<div class="annotation-info">
+    <h2>Annotate: "{{ query }}"</h2>
+    <p>Draw bounding boxes around the object you want to detect</p>
+</div>
+
+<div class="instructions">
+    <h4>How to annotate:</h4>
+    <ul style="margin-left: 20px;">
+        <li>Click and drag to draw a box around the object</li>
+        <li>Draw boxes on all images where the object appears</li>
+        <li>If the object doesn't appear in an image, you can skip it</li>
+        <li>Click "Clear" to remove your current drawing</li>
+    </ul>
+</div>
+
+<form action="/save_annotations" method="post" id="annotation-form">
+    <input type="hidden" name="original_query" value="{{ query }}">
+    
+    {% for local_image_path, image_filename in images %}
+    <div class="annotation-container">
+        <div class="canvas-wrapper">
+            <h3>Image {{ loop.index }}: {{ image_filename }}</h3>
+            <canvas id="canvas_{{ loop.index0 }}" width="500" height="400"></canvas>
+            <input type="hidden" name="image_urls" value="{{ local_image_path }}">
+            <input type="hidden" id="annotation_{{ loop.index0 }}" name="annotations">
+            <div style="margin-top: 10px;">
+                <button type="button" class="tool-btn" onclick="clearCanvas({{ loop.index0 }})">Clear</button>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    
+    <div style="text-align: center; margin-top: 30px;">
+        <button type="submit" class="btn btn-success">Train Model</button>
+    </div>
+</form>
+
+<script>
+const images = {{ images | tojson }};
+
+{% for local_image_path, image_filename in images %}
+(function() {
+    const canvas = document.getElementById('canvas_{{ loop.index0 }}');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = '{{ local_image_path }}';
+    
+    let isDrawing = false;
+    let startX = 0, startY = 0;
+    let rects = [];
+    
+    img.onload = function() {
+        const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+        const x = (canvas.width / 2) - (img.width / 2) * scale;
+        const y = (canvas.height / 2) - (img.height / 2) * scale;
+        ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+        img.displayWidth = img.width * scale;
+        img.displayHeight = img.height * scale;
+        img.offsetX = x;
+        img.offsetY = y;
+    };
+    
+    canvas.addEventListener('mousedown', function(e) {
+        const rect = canvas.getBoundingClientRect();
+        startX = e.clientX - rect.left;
+        startY = e.clientY - rect.top;
+        isDrawing = true;
+    });
+    
+    canvas.addEventListener('mousemove', function(e) {
+        if (!isDrawing) return;
+        const rect = canvas.getBoundingClientRect();
+        const currentX = e.clientX - rect.left;
+        const currentY = e.clientY - rect.top;
+        
+        redraw();
+        ctx.strokeStyle = '#ff0000';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(startX, startY, currentX - startX, currentY - startY);
+    });
+    
+    canvas.addEventListener('mouseup', function(e) {
+        if (!isDrawing) return;
+        isDrawing = false;
+        const rect = canvas.getBoundingClientRect();
+        const endX = e.clientX - rect.left;
+        const endY = e.clientY - rect.top;
+        
+        const width = Math.abs(endX - startX);
+        const height = Math.abs(endY - startY);
+        
+        if (width > 10 && height > 10) {
+            rects.push({x: startX, y: startY, width, height});
+        }
+        
+        saveAnnotation();
+    });
+    
+    function redraw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (img.complete) {
+            const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+            const x = (canvas.width / 2) - (img.width / 2) * scale;
+            const y = (canvas.height / 2) - (img.height / 2) * scale;
+            ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+        }
+        
+        ctx.strokeStyle = '#ff0000';
+        ctx.lineWidth = 3;
+        rects.forEach(r => {
+            ctx.strokeRect(r.x, r.y, r.width, r.height);
+        });
+    }
+    
+    window.clearCanvas_{{ loop.index0 }} = function() {
+        rects = [];
+        redraw();
+        saveAnnotation();
+    };
+    
+    function saveAnnotation() {
+        document.getElementById('annotation_{{ loop.index0 }}').value = JSON.stringify({
+            rects: rects,
+            canvasWidth: canvas.width,
+            canvasHeight: canvas.height,
+            imageElement: img.complete ? {
+                width: img.width,
+                height: img.height,
+                displayWidth: img.displayWidth,
+                displayHeight: img.displayHeight,
+                offsetX: img.offsetX,
+                offsetY: img.offsetY
+            } : null
+        });
+    }
+})();
+{% endfor %}
+
+function clearCanvas(idx) {
+    window['clearCanvas_' + idx]();
+}
+</script>
+{% endblock %}

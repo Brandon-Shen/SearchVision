@@ -1,6 +1,10 @@
 import os
-from fastapi import FastAPI, Form, HTTPException, Query
-from fastapi.responses import HTMLResponse
+import json
+import asyncio
+from pathlib import Path
+from fastapi import FastAPI, Form, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 import logging
 from dotenv import load_dotenv
@@ -16,29 +20,12 @@ from src.create_data_yaml import create_data_yaml
 import shutil
 from src.utils.annotation_converter import convert_to_yolo_format, ensure_directory
 
-# Paths to the directories
-images_path = "dataset/train/images"
-labels_path = "dataset/train/labels"
-
-# Clear the directories on startup
-
-
-def clear_directory(path):
-    if os.path.exists(path):
-        shutil.rmtree(path)  # Remove the directory and its contents
-    os.makedirs(path)  # Recreate the directory
-
-
-# Clear the images and labels directories
-clear_directory(images_path)
-clear_directory(labels_path)
-
 load_dotenv()
 
-# Initialize the FastAPI app
 app = FastAPI()
 
-# Set up logging
+templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+
 log_file_path = os.path.join(os.getcwd(), 'app_logs.txt')
 logging.basicConfig(
     level=logging.INFO,
@@ -50,294 +37,244 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Path for saving and serving static images
+images_path = "dataset/train/images"
+labels_path = "dataset/train/labels"
 download_path = "dataset/train/images"
-os.makedirs(download_path, exist_ok=True)
 
-# Serve static files (like images) from the "dataset/train/images" directory
+os.makedirs(download_path, exist_ok=True)
 app.mount("/images", StaticFiles(directory=download_path), name="images")
 
+training_status = {
+    "step": 0,
+    "status": "Idle",
+    "detail": "",
+    "completed": False,
+    "success": False,
+    "model_path": "",
+    "error": "",
+    "query": ""
+}
+
+def clear_directory(path):
+    if os.path.exists(path):
+        shutil.rmtree(path)
+    os.makedirs(path)
+
+def reset_training_status(query):
+    global training_status
+    training_status = {
+        "step": 0,
+        "status": "Starting",
+        "detail": "Initializing...",
+        "completed": False,
+        "success": False,
+        "model_path": "",
+        "error": "",
+        "query": query
+    }
 
 @app.get("/", response_class=HTMLResponse)
-async def index():
-    try:
-        html_content = """
-        <html>
-        <body>
-            <form action="/search" method="post">
-                <input type="text" name="query" placeholder="Search for an item">
-                <button type="submit">Search</button>
-            </form>
-        </body>
-        </html>
-        """
-        return html_content
-    except Exception as e:
-        logger.error(f"Error generating the index page: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
-
+async def index(request: Request):
+    clear_directory(images_path)
+    clear_directory(labels_path)
+    return templates.TemplateResponse("search.html", {"request": request})
 
 @app.post("/search", response_class=HTMLResponse)
-async def search(query: str = Form(...)):
+async def search(request: Request, query: str = Form(...)):
     try:
         api_key = os.getenv("GOOGLE_API_KEY")
         search_engine_id = os.getenv("SEARCH_ENGINE_ID")
-        original_query = query
+        
+        if not api_key or not search_engine_id:
+            return templates.TemplateResponse("search.html", {
+                "request": request,
+                "error": "API keys not configured. Please set GOOGLE_API_KEY and SEARCH_ENGINE_ID in .env"
+            })
+        
         images = search_images(query, api_key, search_engine_id)
-
-        # Filter the most dissimilar images
+        
+        if not images:
+            return templates.TemplateResponse("search.html", {
+                "request": request,
+                "error": "No images found. Try a different search term."
+            })
+        
         selected_images = select_most_dissimilar_images(images, 9)
-
-        # Create a more detailed selection interface
-        html_content = f"""
-        <html>
-        <head>
-            <style>
-                .image-container {{ display: inline-block; margin: 10px; text-align: center; }}
-                .image-preview {{ max-width: 200px; max-height: 200px; }}
-                .selected {{ border: 3px solid green; }}
-            </style>
-            <script>
-                function toggleSelection(checkbox) {{
-                    var container = checkbox.parentElement;
-                    container.classList.toggle('selected', checkbox.checked);
-                }}
-            </script>
-        </head>
-        <body>
-            <h2>Select the images that best represent: {query}</h2>
-            <p>Please choose images that clearly show the object you want to detect.</p>
-            <form action='/select' method='post'>
-                <input type='hidden' name='original_query' value='{original_query}'>
-                {generate_image_previews(selected_images)}
-                <br>
-                <button type='submit'>Use Selected Images for Training</button>
-            </form>
-        </body>
-        </html>
-        """
-        return html_content
+        
+        return templates.TemplateResponse("select.html", {
+            "request": request,
+            "query": query,
+            "images": selected_images
+        })
     except Exception as e:
         logger.error(f"Error during image search: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
-
-def generate_image_previews(images):
-    return "\n".join([
-        f"""
-        <div class='image-container'>
-            <img src='{url}' class='image-preview'><br>
-            <input type='checkbox' name='selected_images' value='{url}'
-                   onchange='toggleSelection(this)'>
-            <br>Select this image
-        </div>
-        """ for url in images
-    ])
-
+        return templates.TemplateResponse("search.html", {
+            "request": request,
+            "error": f"Search failed: {str(e)}"
+        })
 
 @app.post("/select", response_class=HTMLResponse)
 async def select(
+        request: Request,
         selected_images: list[str] = Form(...),
-        original_query: str = Form(...),
-        model_type: str = Query('yolov8', enum=['yolov5', 'yolov8'])):
+        original_query: str = Form(...)):
     try:
-        if not selected_images:
-            raise HTTPException(status_code=400, detail="No images selected.")
-
-        # Step 1: Download the selected images and store their local paths
+        if not selected_images or len(selected_images) < 3:
+            raise HTTPException(status_code=400, detail="Please select at least 3 images.")
+        
+        clear_directory(images_path)
+        clear_directory(labels_path)
+        
         local_image_paths = download_images(selected_images, download_path)
-
-        # Step 2: Display the locally downloaded images for annotation using
-        # pure HTML5 Canvas
-        html_content = f"""
-        <html>
-        <head>
-            <style>
-                canvas {{
-                    border: 1px solid black;
-                }}
-            </style>
-        </head>
-        <body>
-            <h2>Annotate the selected images</h2>
-            <form action='/save_annotations' method='post'>
-            <input type='hidden' name='original_query' value='{original_query}'>  <!-- Keep passing original_query -->
-        """
-        for idx, local_image_path in enumerate(local_image_paths):
-            image_filename = os.path.basename(local_image_path)
-            served_image_path = f"/images/{image_filename}"
-
-            # Ensure each canvas and variable is uniquely named to avoid
-            # conflict
-            html_content += f"""
-            <div>
-                <h3>Image {idx + 1}</h3>
-                <canvas id="canvas_{idx}" width="500" height="400"></canvas>
-                <input type="hidden" name="image_urls" value="{served_image_path}">
-                <input type="hidden" id="annotation_{idx}" name="annotations">
-                <br><br>
-            </div>
-            <script>
-                var canvas_{idx} = document.getElementById('canvas_{idx}');
-                var ctx_{idx} = canvas_{idx}.getContext('2d');
-                var img_{idx} = new Image();
-                img_{idx}.src = '{served_image_path}';
-                img_{idx}.onload = function() {{
-                    ctx_{idx}.drawImage(img_{idx}, 0, 0, canvas_{idx}.width, canvas_{idx}.height);
-                }};
-
-                var isDown_{idx} = false;
-                var startX_{idx}, startY_{idx}, endX_{idx}, endY_{idx};
-
-                canvas_{idx}.addEventListener('mousedown', function(e) {{
-                    isDown_{idx} = true;
-                    var rect = canvas_{idx}.getBoundingClientRect();
-                    startX_{idx} = e.clientX - rect.left;
-                    startY_{idx} = e.clientY - rect.top;
-                }});
-
-                canvas_{idx}.addEventListener('mousemove', function(e) {{
-                    if (!isDown_{idx}) return;
-                    var rect = canvas_{idx}.getBoundingClientRect();
-                    var currentX = e.clientX - rect.left;
-                    var currentY = e.clientY - rect.top;
-
-                    // Redraw the image to clear the previous rectangle
-                    ctx_{idx}.clearRect(0, 0, canvas_{idx}.width, canvas_{idx}.height);
-                    ctx_{idx}.drawImage(img_{idx}, 0, 0, canvas_{idx}.width, canvas_{idx}.height);
-
-                    // Draw the current rectangle
-                    ctx_{idx}.beginPath();
-                    ctx_{idx}.rect(startX_{idx}, startY_{idx}, currentX - startX_{idx}, currentY - startY_{idx});
-                    ctx_{idx}.strokeStyle = 'red';
-                    ctx_{idx}.lineWidth = 2;
-                    ctx_{idx}.stroke();
-                }});
-
-                canvas_{idx}.addEventListener('mouseup', function(e) {{
-                    isDown_{idx} = false;
-                    var rect = canvas_{idx}.getBoundingClientRect();
-                    endX_{idx} = e.clientX - rect.left;
-                    endY_{idx} = e.clientY - rect.top;
-
-                    // Save the rectangle coordinates as the annotation
-                    document.getElementById('annotation_{idx}').value = JSON.stringify({{
-                        x: startX_{idx},
-                        y: startY_{idx},
-                        width: endX_{idx} - startX_{idx},
-                        height: endY_{idx} - startY_{idx}
-                    }});
-                }});
-            </script>
-            """
-
-        html_content += """
-            <button type="submit">Save Annotations</button>
-            </form>
-        </body>
-        </html>
-        """
-        return html_content
-
+        
+        images_data = [
+            (path, os.path.basename(path)) 
+            for path in local_image_paths
+        ]
+        
+        return templates.TemplateResponse("annotate.html", {
+            "request": request,
+            "query": original_query,
+            "images": images_data
+        })
     except Exception as e:
         logger.error(f"Error during image selection: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+        raise HTTPException(status_code=500, detail=str(e))
 
-
-@app.post("/save_annotations", response_class=HTMLResponse)
-async def save_annotations(
+@app.post("/start-training", response_class=HTMLResponse)
+async def start_training(
+        request: Request,
         image_urls: list[str] = Form(...),
         annotations: list[str] = Form(...),
-        original_query: str = Form(...),
-        model_type: str = Query('yolov8', enum=['yolov5', 'yolov8'])):
+        original_query: str = Form(...)):
     try:
-        # Create directories
-        dataset_dir = "dataset"
-        images_dir = os.path.join(dataset_dir, "train", "images")
-        labels_dir = os.path.join(dataset_dir, "train", "labels")
-        ensure_directory(labels_dir)
+        reset_training_status(original_query)
         
-        # Process user annotations (convert from canvas JSON to YOLO format)
-        logger.info(f"Processing {len(annotations)} user annotations")
+        asyncio.create_task(run_training(image_urls, annotations, original_query))
+        
+        return templates.TemplateResponse("training.html", {
+            "request": request,
+            "query": original_query
+        })
+    except Exception as e:
+        logger.error(f"Error starting training: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def run_training(image_urls, annotations, original_query):
+    global training_status
+    try:
+        training_status["status"] = "Downloading"
+        training_status["detail"] = "Saving your annotated images"
+        training_status["step"] = 0
+        
+        ensure_directory(labels_dir := os.path.join("dataset", "train", "labels"))
+        
         for image_url, annotation_json in zip(image_urls, annotations):
             try:
-                # Get image path
                 image_name = os.path.basename(image_url)
-                image_path = os.path.join(images_dir, image_name)
+                image_path = os.path.join(images_path, image_name)
                 
-                # Get image dimensions
                 with Image.open(image_path) as img:
                     img_width, img_height = img.size
                 
-                # Convert annotation to YOLO format
                 yolo_annotation = convert_to_yolo_format(annotation_json, img_width, img_height)
                 
-                # Save YOLO annotation
                 label_filename = os.path.splitext(image_name)[0] + ".txt"
                 label_path = os.path.join(labels_dir, label_filename)
                 
                 with open(label_path, 'w') as f:
                     f.write(yolo_annotation)
-                
-                logger.info(f"Converted annotation for {image_name} to YOLO format")
-                
             except Exception as e:
-                logger.error(f"Error processing annotation for {image_url}: {e}")
+                logger.error(f"Error processing annotation: {e}")
         
-        # Scrape and download similar images
+        training_status["step"] = 1
+        training_status["status"] = "Scraping"
+        training_status["detail"] = "Finding similar images..."
+        
         api_key = os.getenv("GOOGLE_API_KEY")
         search_engine_id = os.getenv("SEARCH_ENGINE_ID")
         
-        logger.info(f"Scraping similar images for query: {original_query}")
         similar_images = scrape_similar_images(
             image_urls,
             original_query,
             api_key,
             search_engine_id,
             num_results_per_image=10,
-            total_images_to_download=30  # Reduced for faster processing
+            total_images_to_download=30
         )
         
-        # Download images
-        logger.info(f"Downloading {len(similar_images)} similar images")
-        download_images(similar_images, images_dir)
+        training_status["step"] = 2
+        training_status["status"] = "Downloading"
+        training_status["detail"] = f"Downloading {len(similar_images)} similar images"
         
-        # Auto-annotate similar images
-        logger.info("Auto-annotating similar images")
-        auto_annotate_images(images_dir, labels_dir)
+        download_images(similar_images, images_path)
         
-        # Create data.yaml config file
-        logger.info("Creating YAML configuration")
+        training_status["step"] = 3
+        training_status["status"] = "Annotating"
+        training_status["detail"] = "Auto-annotating scraped images"
+        
+        auto_annotate_images(images_path, labels_dir)
+        
+        training_status["step"] = 4
+        training_status["status"] = "Training"
+        training_status["detail"] = "Training YOLOv8 model (this may take a few minutes)"
+        
         data_yaml_path = create_data_yaml(labels_dir, original_query)
         
-        # Train model
-        logger.info(f"Training {model_type} model")
-        model_path = train_model(data_yaml_path, model_type)
+        model_path = train_model(data_yaml_path, 'yolov8')
         
         if model_path and os.path.exists(model_path):
-            return f"""
-            <html>
-            <body>
-                <h1>Training Complete!</h1>
-                <p>Your model has been trained to detect: <strong>{original_query}</strong></p>
-                <p>Model saved at: {model_path}</p>
-                <a href="/" class="button">Train Another Model</a>
-            </body>
-            </html>
-            """
+            training_status["completed"] = True
+            training_status["success"] = True
+            training_status["model_path"] = model_path
+            training_status["status"] = "Complete"
+            training_status["detail"] = "Model trained successfully!"
         else:
-            return f"""
-            <html>
-            <body>
-                <h1>Training Error</h1>
-                <p>There was a problem during model training. Check the logs for details.</p>
-                <a href="/" class="button">Try Again</a>
-            </body>
-            </html>
-            """
-    
+            raise Exception("Model training failed - no output model found")
+            
     except Exception as e:
-        logger.error(f"Error during model training process: {e}")
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Error in model training process: {str(e)}"
-        )
+        logger.error(f"Training error: {e}")
+        training_status["completed"] = True
+        training_status["success"] = False
+        training_status["error"] = str(e)
+        training_status["status"] = "Error"
+        training_status["detail"] = str(e)
+
+@app.get("/training-status")
+async def get_training_status():
+    return JSONResponse(training_status)
+
+@app.get("/results", response_class=HTMLResponse)
+async def results(request: Request, model: str = Query(...)):
+    query = training_status.get("query", "Unknown")
+    
+    images_count = len([f for f in os.listdir(images_path) if f.endswith(('.jpg', '.png'))])
+    labels_count = len([f for f in os.listdir(labels_path) if f.endswith('.txt')])
+    
+    stats = {
+        "images": images_count,
+        "annotations": labels_count,
+        "epochs": 25
+    }
+    
+    return templates.TemplateResponse("results.html", {
+        "request": request,
+        "query": query,
+        "model_path": model,
+        "stats": stats
+    })
+
+@app.get("/error", response_class=HTMLResponse)
+async def error_page(request: Request, message: str = Query(...)):
+    return templates.TemplateResponse("error.html", {
+        "request": request,
+        "error": message
+    })
+
+@app.post("/save_annotations", response_class=HTMLResponse)
+async def save_annotations(
+        request: Request,
+        image_urls: list[str] = Form(...),
+        annotations: list[str] = Form(...),
+        original_query: str = Form(...)):
+    return await start_training(request, image_urls, annotations, original_query)
