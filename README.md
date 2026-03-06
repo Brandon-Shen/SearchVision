@@ -1,6 +1,6 @@
 # SearchVision
 
-**SearchVision** ***(WORK IN PROGRESS)*** is a web application built with FastAPI that allows users to search for images, select relevant images, and use web scraping techniques to find similar images. The selected images are then used to train a YOLOv8 (You Only Look Once) model for object detection.
+**SearchVision** is a web application built with FastAPI that allows users to search for images, select relevant images, and use web scraping techniques to find similar images. The selected images are then used to train a YOLOv8 (You Only Look Once) model for object detection.
 
 ## Table of Contents
 
