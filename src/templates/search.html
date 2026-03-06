@@ -81,7 +81,9 @@
 .error-alert-message {
     color: #7f1d1d;
     font-size: 0.9rem;
-    line-height: 1.4;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-wrap: break-word;
 }
 
 .error-alert-close {
@@ -331,6 +333,9 @@
         <div class="error-alert-content">
             <div class="error-alert-title">Search Failed</div>
             <div class="error-alert-message">{{ error }}</div>
+            <div style="margin-top: 12px; font-size: 0.85rem;">
+                <a href="/debug-api" style="color: #991b1b; text-decoration: underline; font-weight: 600;">Check API Configuration →</a>
+            </div>
         </div>
         <button class="error-alert-close" onclick="document.getElementById('errorAlert').style.display='none'">
             <svg viewBox="0 0 24 24">

@@ -19,9 +19,18 @@
 
 .image-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-template-columns: repeat(3, 1fr);
     gap: 20px;
-    margin: 30px 0;
+    margin: 30px auto;
+    max-width: 900px;
+    width: 100%;
+}
+
+.form-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
 }
 
 .image-card {
@@ -81,6 +90,8 @@
     margin-top: 30px;
     padding-top: 20px;
     border-top: 1px solid #e0e0e0;
+    width: 100%;
+    max-width: 900px;
 }
 
 .submit-section p {
@@ -105,7 +116,7 @@
     <p>Choose at least 3 images that clearly show the object you want to detect</p>
 </div>
 
-<form action="/select" method="post" id="selection-form">
+<form action="/select" method="post" id="selection-form" class="form-wrapper">
     <input type="hidden" name="original_query" value="{{ query }}">
     
     <div class="image-grid">
