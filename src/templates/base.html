@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}SearchVision{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -12,93 +15,134 @@
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #ffffff;
             min-height: 100vh;
-            padding: 20px;
+            padding: 0;
+            overflow-x: hidden;
+            color: #020817;
         }
         
         .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 100%;
+            margin: 0;
+            background: transparent;
+            border-radius: 0;
+            box-shadow: none;
             overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
         }
         
         header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px;
+            background: transparent;
+            color: #020817;
+            padding: 40px 20px;
             text-align: center;
+            position: relative;
+            z-index: 1;
         }
         
         header h1 {
             font-size: 2.5rem;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+            color: #020817;
         }
         
         header p {
-            opacity: 0.9;
-            font-size: 1.1rem;
+            opacity: 0.6;
+            font-size: 1rem;
+            color: #64748b;
+            font-weight: 400;
         }
         
         main {
-            padding: 40px;
+            padding: 0;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         
         {% block styles %}{% endblock %}
         
+        
         .btn {
             display: inline-block;
-            padding: 14px 32px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 1rem;
-            font-weight: 600;
+            padding: 10px 24px;
+            background: #020817;
+            color: #ffffff;
+            border: 1px solid #020817;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            font-weight: 500;
             cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
+            transition: all 0.2s ease;
             text-decoration: none;
             margin-top: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
         
         .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+            background: #1e293b;
+            border-color: #1e293b;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .btn:active {
+            transform: scale(0.98);
         }
         
         .btn-secondary {
-            background: #6c757d;
+            background: #e2e8f0;
+            color: #020817;
+            border-color: #e2e8f0;
+        }
+        
+        .btn-secondary:hover {
+            background: #cbd5e1;
+            border-color: #cbd5e1;
         }
         
         .btn-success {
-            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            background: #16a34a;
+            border-color: #16a34a;
+            color: #ffffff;
+        }
+        
+        .btn-success:hover {
+            background: #15803d;
+            border-color: #15803d;
         }
         
         .error-message {
-            background: #fee;
-            border: 1px solid #fcc;
-            color: #c33;
+            background: #fee2e2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
             padding: 16px;
-            border-radius: 8px;
+            border-radius: 6px;
             margin: 20px 0;
+            font-size: 0.95rem;
         }
         
+        
         footer {
-            background: #f8f9fa;
-            padding: 20px;
+            background: #f8fafc;
+            padding: 24px;
             text-align: center;
-            color: #666;
+            color: #64748b;
+            border-top: 1px solid #e2e8f0;
+            font-size: 0.9rem;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>🔍 SearchVision</h1>
+            <h1>SearchVision</h1>
             <p>Train your own object detection model in minutes</p>
         </header>
         <main>
