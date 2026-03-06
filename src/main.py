@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import requests
 from pathlib import Path
 from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -134,7 +135,7 @@ async def select(
         local_image_paths = download_images(selected_images, download_path)
 
         images_data = [
-            (path, os.path.basename(path))
+            (f"/images/{os.path.basename(path)}", os.path.basename(path))
             for path in local_image_paths
         ]
 
@@ -289,6 +290,47 @@ async def error_page(request: Request, message: str = Query(...)):
     return templates.TemplateResponse("error.html", {
         "request": request,
         "error": message
+    })
+
+
+@app.get("/debug-api", response_class=HTMLResponse)
+async def debug_api(request: Request):
+    """Debug endpoint to test API configuration"""
+    api_key = os.getenv("GOOGLE_API_KEY")
+    search_engine_id = os.getenv("SEARCH_ENGINE_ID")
+    
+    debug_info = {
+        "api_key_set": bool(api_key),
+        "api_key_preview": f"{api_key[:10]}..." if api_key else "NOT SET",
+        "search_engine_id_set": bool(search_engine_id),
+        "search_engine_id": search_engine_id,
+    }
+    
+    # Try to make a simple API call
+    test_result = None
+    if api_key and search_engine_id:
+        try:
+            test_url = (
+                f"https://www.googleapis.com/customsearch/v1?"
+                f"q=test&searchType=image&key={api_key}&cx={search_engine_id}&num=1"
+            )
+            response = requests.get(test_url, timeout=5)
+            test_result = {
+                "status_code": response.status_code,
+                "success": response.status_code == 200,
+                "response": response.json()
+            }
+        except Exception as e:
+            test_result = {
+                "status_code": "N/A",
+                "success": False,
+                "error": str(e)
+            }
+    
+    return templates.TemplateResponse("debug.html", {
+        "request": request,
+        "debug_info": debug_info,
+        "test_result": test_result
     })
 
 

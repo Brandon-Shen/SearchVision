@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+
+{% block title %}API Debug - SearchVision{% endblock %}
+
+{% block styles %}
+@keyframes fadeInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.debug-container {
+    max-width: 800px;
+    margin: 0 auto;
+    animation: fadeInDown 0.6s ease-out;
+    padding: 0 20px;
+}
+
+.debug-container h2 {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #020817;
+    margin-bottom: 24px;
+    letter-spacing: -0.5px;
+}
+
+.debug-section {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.debug-section h3 {
+    color: #020817;
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 16px;
+}
+
+.debug-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.debug-item:last-child {
+    border-bottom: none;
+}
+
+.debug-label {
+    color: #64748b;
+    font-weight: 500;
+    font-size: 0.95rem;
+}
+
+.debug-value {
+    color: #020817;
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.9rem;
+    text-align: right;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.status-success {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.status-error {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.status-warning {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.code-block {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 12px;
+    overflow-x: auto;
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.85rem;
+    color: #020817;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.debug-steps {
+    background: #f8fafc;
+    border-left: 4px solid #3b82f6;
+    border-radius: 6px;
+    padding: 16px;
+    margin-top: 16px;
+}
+
+.debug-steps ol {
+    margin-left: 20px;
+    color: #64748b;
+    line-height: 1.8;
+}
+
+.debug-steps li {
+    margin-bottom: 10px;
+}
+
+.debug-steps a {
+    color: #3b82f6;
+    text-decoration: none;
+}
+
+.debug-steps a:hover {
+    text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+    .debug-container h2 {
+        font-size: 1.5rem;
+    }
+    
+    .debug-item {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .debug-value {
+        text-align: left;
+        margin-top: 8px;
+    }
+}
+{% endblock %}
+
+{% block content %}
+<div class="debug-container">
+    <h2>API Configuration Debug</h2>
+    
+    <div class="debug-section">
+        <h3>Configuration Status</h3>
+        <div class="debug-item">
+            <span class="debug-label">Google API Key</span>
+            <span class="status-badge {% if debug_info.api_key_set %}status-success{% else %}status-error{% endif %}">
+                {% if debug_info.api_key_set %}✓ SET{% else %}✗ NOT SET{% endif %}
+            </span>
+        </div>
+        {% if debug_info.api_key_set %}
+        <div class="debug-item">
+            <span class="debug-label">API Key Preview</span>
+            <span class="debug-value">{{ debug_info.api_key_preview }}</span>
+        </div>
+        {% endif %}
+        <div class="debug-item">
+            <span class="debug-label">Search Engine ID (CX)</span>
+            <span class="status-badge {% if debug_info.search_engine_id_set %}status-success{% else %}status-error{% endif %}">
+                {% if debug_info.search_engine_id_set %}✓ SET{% else %}✗ NOT SET{% endif %}
+            </span>
+        </div>
+        {% if debug_info.search_engine_id_set %}
+        <div class="debug-item">
+            <span class="debug-label">Search Engine ID</span>
+            <span class="debug-value">{{ debug_info.search_engine_id }}</span>
+        </div>
+        {% endif %}
+    </div>
+    
+    {% if test_result %}
+    <div class="debug-section">
+        <h3>API Test Result</h3>
+        <div class="debug-item">
+            <span class="debug-label">Test Status</span>
+            <span class="status-badge {% if test_result.success %}status-success{% else %}status-error{% endif %}">
+                {% if test_result.success %}✓ SUCCESS{% else %}✗ FAILED{% endif %}
+            </span>
+        </div>
+        <div class="debug-item">
+            <span class="debug-label">HTTP Status Code</span>
+            <span class="debug-value">{{ test_result.status_code }}</span>
+        </div>
+        
+        {% if test_result.success %}
+            <div style="margin-top: 16px;">
+                <p style="color: #16a34a; font-weight: 600; margin-bottom: 8px;">✓ Your API configuration is working correctly!</p>
+                <p style="color: #64748b; font-size: 0.9rem;">If you're still seeing errors, try:</p>
+                <ul style="color: #64748b; font-size: 0.9rem; margin-left: 20px; margin-top: 8px;">
+                    <li>Clearing your browser cache</li>
+                    <li>Restarting the application</li>
+                    <li>Checking your search query (use simple terms like "dog" or "cat")</li>
+                </ul>
+            </div>
+        {% else %}
+            <div style="margin-top: 16px;">
+                {% if test_result.error %}
+                <p style="color: #991b1b; font-weight: 600; margin-bottom: 8px;">✗ Error:</p>
+                <div class="code-block">{{ test_result.error }}</div>
+                {% else %}
+                <p style="color: #991b1b; font-weight: 600; margin-bottom: 8px;">✗ API Test Failed</p>
+                <div class="code-block">{{ test_result.response | tojson(indent=2) }}</div>
+                {% endif %}
+                
+                <div class="debug-steps">
+                    <p style="font-weight: 600; margin-bottom: 12px; color: #020817;">Fix your API configuration:</p>
+                    <ol>
+                        <li>Go to <a href="https://console.cloud.google.com" target="_blank">Google Cloud Console</a></li>
+                        <li>Select your project (top of the page)</li>
+                        <li>Go to "APIs & Services" → "Library"</li>
+                        <li>Search for "Custom Search API"</li>
+                        <li>Click on it and click "ENABLE" (must be blue enabled, not just created)</li>
+                        <li>Go to <a href="https://programmablesearchengine.google.com" target="_blank">Programmable Search Engine</a></li>
+                        <li>Get your Search Engine ID (CX)</li>
+                        <li>Update your .env file with correct values</li>
+                        <li>Restart the application</li>
+                    </ol>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+    {% endif %}
+    
+    {% if not debug_info.api_key_set or not debug_info.search_engine_id_set %}
+    <div class="debug-section" style="background: #fef3c7; border-color: #fcd34d;">
+        <h3 style="color: #92400e;">⚠️ Configuration Missing</h3>
+        <div class="debug-steps">
+            <ol style="color: #92400e;">
+                <li>Create a Google Cloud Project at <a href="https://console.cloud.google.com" target="_blank">console.cloud.google.com</a></li>
+                <li>Enable the Custom Search API (APIs & Services → Library → search for "Custom Search")</li>
+                <li>Create API credentials (API Key)</li>
+                <li>Get your Search Engine ID from <a href="https://programmablesearchengine.google.com" target="_blank">Programmable Search Engine</a></li>
+                <li>Create a .env file in the project root with:
+                    <div style="background: #ffffff; padding: 12px; margin-top: 8px; border-radius: 4px; border: 1px solid #fcd34d;">
+                        <code style="color: #020817;">GOOGLE_API_KEY=your_api_key_here
+SEARCH_ENGINE_ID=your_cx_here</code>
+                    </div>
+                </li>
+                <li>Restart the application</li>
+            </ol>
+        </div>
+    </div>
+    {% endif %}
+    
+    <div style="margin-top: 24px;">
+        <a href="/" class="btn">Back to Home</a>
+    </div>
+</div>
+{% endblock %}
