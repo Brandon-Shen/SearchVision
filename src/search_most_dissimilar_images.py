@@ -5,10 +5,14 @@ from torchvision import models, transforms
 import torch
 from src.download_images import download_images
 
-# Load a pre-trained model (e.g., ResNet) for feature extraction
-# Updated to use the correct 'weights' parameter
+
+# Load a pre-trained ResNet50 model for feature extraction
 model = models.resnet50(weights='IMAGENET1K_V1')
 model = model.eval()  # Set the model to evaluation mode
+
+# Remove the final classification layer to extract 2048-dim features from avgpool
+feature_extractor = torch.nn.Sequential(*list(model.children())[:-1])
+feature_extractor = feature_extractor.eval()
 
 # Transformation for input images (resize, normalize, etc.)
 transform = transforms.Compose([
@@ -23,7 +27,7 @@ def extract_features(image_path):
     Extracts features from an image using a pre-trained model.
 
     :param image_path: Path to the image.
-    :return: Feature vector of the image.
+    :return: Feature vector of the image (2048-dim from avgpool layer).
     """
     try:
         image = Image.open(image_path).convert(
@@ -31,9 +35,9 @@ def extract_features(image_path):
         image_tensor = transform(image).unsqueeze(
             0)  # Transform and add batch dimension
         with torch.no_grad():
-            # Use the model to extract features
-            # Convert tensor to numpy array and flatten
-            features = model(image_tensor).flatten().numpy()
+            # Use the feature extractor to get 2048-dim features from avgpool
+            features = feature_extractor(image_tensor)
+            features = features.flatten().numpy()
         return features
     except Exception as e:
         print(f"Error extracting features from {image_path}: {e}")

@@ -1,8 +1,30 @@
 from ultralytics import YOLO
 import os
 import logging
+import torch
 
 logger = logging.getLogger(__name__)
+
+
+def get_optimal_batch_size():
+    """
+    Determines optimal batch size based on available VRAM.
+    
+    Returns:
+        int: Optimal batch size (16, 8, or 4)
+    """
+    if torch.cuda.is_available():
+        # Get GPU memory in GB
+        gpu_mem = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+        if gpu_mem >= 8:
+            return 16
+        elif gpu_mem >= 4:
+            return 8
+        else:
+            return 4
+    else:
+        # CPU training - use smaller batch
+        return 4
 
 
 def train_model(data_yaml_path, model_type='yolov8'):
@@ -20,15 +42,19 @@ def train_model(data_yaml_path, model_type='yolov8'):
         # Initialize YOLO model
         model = YOLO('yolov8n.pt')  # Start with pre-trained model
 
+        # Determine optimal batch size based on available VRAM
+        batch_size = get_optimal_batch_size()
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
         # Train with specific parameters
         results = model.train(
             data=data_yaml_path,
-            epochs=25,            # Reduced epochs for faster training
+            epochs=25,            # Default epochs for training
             imgsz=640,            # Image size
-            batch=8,              # Batch size (reduce if memory issues)
+            batch=batch_size,     # Auto batch size based on VRAM
             patience=10,          # Early stopping patience
             save=True,           # Save model
-            device='cpu'         # Change to 'cuda' if GPU available
+            device=device        # Use GPU if available, else CPU
         )
 
         # Get the best model path
