@@ -4,7 +4,7 @@ import asyncio
 import requests
 from pathlib import Path
 from fastapi import FastAPI, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 import logging
@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from src.auto_annotate_images import auto_annotate_images
 from src.download_images import download_images
 from src.search_images import search_images
-from src.search_most_dissimilar_images import select_most_dissimilar_images
+from src.select_balanced_images import select_balanced_images
 from src.train_model import train_model
 from src.scrape_similar import scrape_similar_images
 from PIL import Image
@@ -85,7 +85,7 @@ async def index(request: Request):
 
 
 @app.post("/search", response_class=HTMLResponse)
-async def search(request: Request, query: str = Form(...)):
+async def search(request: Request, query: str = Form(...), page: int = Form(default=0)):
     try:
         api_key = os.getenv("GOOGLE_API_KEY")
         search_engine_id = os.getenv("SEARCH_ENGINE_ID")
@@ -96,7 +96,9 @@ async def search(request: Request, query: str = Form(...)):
                 "error": "API keys not configured. Please set GOOGLE_API_KEY and SEARCH_ENGINE_ID in .env"
             })
 
-        images = search_images(query, api_key, search_engine_id)
+        # Fetch more images to allow pagination/different selections
+        # Fetch 30 images so user can get different results on "Search Again"
+        images = search_images(query, api_key, search_engine_id, num_results=30)
 
         if not images:
             return templates.TemplateResponse("search.html", {
@@ -104,12 +106,51 @@ async def search(request: Request, query: str = Form(...)):
                 "error": "No images found. Try a different search term."
             })
 
-        selected_images = select_most_dissimilar_images(images, 9)
+        # Calculate which images to show based on page/retry count
+        # This allows fetching different subsets on each "Search Again"
+        start_idx = page * 9
+        end_idx = start_idx + 15  # Get 15 images to select from (more than 9 needed)
+        
+        images_subset = images[start_idx:end_idx]
+        
+        if len(images_subset) < 9:
+            logger.warning(f"Not enough images for page {page}, got {len(images_subset)}")
+            images_subset = images[start_idx:]
+        
+        if not images_subset:
+            return templates.TemplateResponse("search.html", {
+                "request": request,
+                "error": "No more images available. Try a different search term."
+            })
+
+        # Download images temporarily to extract features for balanced selection
+        temp_download_path = "dataset/temp_selection"
+        os.makedirs(temp_download_path, exist_ok=True)
+        
+        try:
+            image_paths = download_images(images_subset, temp_download_path)
+            
+            # Select balanced images (70% relevance, 30% dissimilarity)
+            selected_images = select_balanced_images(
+                images_subset, 
+                image_paths, 
+                num_images=min(9, len(images_subset)), 
+                relevance_weight=0.7
+            )
+            logger.info(f"Selected {len(selected_images)} balanced images for query: {query} (page {page})")
+        except Exception as e:
+            logger.warning(f"Balanced selection failed, falling back to first 9 images: {e}")
+            selected_images = images_subset[:9]
+        finally:
+            # Clean up temporary downloads
+            if os.path.exists(temp_download_path):
+                shutil.rmtree(temp_download_path)
 
         return templates.TemplateResponse("select.html", {
             "request": request,
             "query": query,
-            "images": selected_images
+            "images": selected_images,
+            "current_page": page
         })
     except Exception as e:
         logger.error(f"Error during image search: {e}")
@@ -210,20 +251,33 @@ async def run_training(image_urls, annotations, original_query):
         api_key = os.getenv("GOOGLE_API_KEY")
         search_engine_id = os.getenv("SEARCH_ENGINE_ID")
 
-        similar_images = scrape_similar_images(
-            image_urls,
-            original_query,
-            api_key,
-            search_engine_id,
-            num_results_per_image=10,
-            total_images_to_download=30
-        )
+        similar_images = []
+        try:
+            similar_images = scrape_similar_images(
+                image_urls,
+                original_query,
+                api_key,
+                search_engine_id,
+                num_results_per_image=10,
+                total_images_to_download=30
+            )
+        except Exception as e:
+            logger.warning(f"Failed to scrape similar images: {e}")
+            logger.info("Continuing training with only annotated images")
+            training_status["detail"] = "Scraping failed, continuing with annotated images"
 
         training_status["step"] = 2
         training_status["status"] = "Downloading"
-        training_status["detail"] = f"Downloading {len(similar_images)} similar images"
-
-        download_images(similar_images, images_path)
+        
+        if similar_images:
+            training_status["detail"] = f"Downloading {len(similar_images)} similar images"
+            try:
+                download_images(similar_images, images_path)
+            except Exception as e:
+                logger.warning(f"Failed to download similar images: {e}")
+                logger.info("Continuing training with only annotated images")
+        else:
+            training_status["detail"] = "No additional images to download, using annotated images only"
 
         training_status["step"] = 3
         training_status["status"] = "Annotating"
@@ -283,6 +337,42 @@ async def results(request: Request, model: str = Query(...)):
         "model_path": model,
         "stats": stats
     })
+
+
+@app.get("/download-model")
+async def download_model(model: str = Query(...)):
+    """Download the trained model file"""
+    try:
+        # Normalize the path and validate it exists
+        model_path = os.path.normpath(model)
+        
+        # Security check: ensure path is within project directory
+        project_root = os.path.abspath(".")
+        abs_model_path = os.path.abspath(model_path)
+        
+        if not abs_model_path.startswith(project_root):
+            logger.error(f"Attempted to download file outside project directory: {abs_model_path}")
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        if not os.path.exists(abs_model_path):
+            logger.error(f"Model file not found: {abs_model_path}")
+            raise HTTPException(status_code=404, detail="Model file not found")
+        
+        # Get the filename for the download
+        filename = os.path.basename(abs_model_path)
+        
+        logger.info(f"Downloading model: {filename}")
+        
+        return FileResponse(
+            path=abs_model_path,
+            media_type="application/octet-stream",
+            filename=filename
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error downloading model: {e}")
+        raise HTTPException(status_code=500, detail="Failed to download model")
 
 
 @app.get("/error", response_class=HTMLResponse)
