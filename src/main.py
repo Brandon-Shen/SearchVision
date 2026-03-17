@@ -85,7 +85,11 @@ async def index(request: Request):
 
 
 @app.post("/search", response_class=HTMLResponse)
-async def search(request: Request, query: str = Form(...), page: int = Form(default=0)):
+async def search(
+    request: Request,
+    query: str = Form(...),
+    page: int = Form(
+        default=0)):
     try:
         api_key = os.getenv("GOOGLE_API_KEY")
         search_engine_id = os.getenv("SEARCH_ENGINE_ID")
@@ -98,7 +102,11 @@ async def search(request: Request, query: str = Form(...), page: int = Form(defa
 
         # Fetch more images to allow pagination/different selections
         # Fetch 30 images so user can get different results on "Search Again"
-        images = search_images(query, api_key, search_engine_id, num_results=30)
+        images = search_images(
+            query,
+            api_key,
+            search_engine_id,
+            num_results=30)
 
         if not images:
             return templates.TemplateResponse("search.html", {
@@ -109,37 +117,42 @@ async def search(request: Request, query: str = Form(...), page: int = Form(defa
         # Calculate which images to show based on page/retry count
         # This allows fetching different subsets on each "Search Again"
         start_idx = page * 9
-        end_idx = start_idx + 15  # Get 15 images to select from (more than 9 needed)
-        
+        # Get 15 images to select from (more than 9 needed)
+        end_idx = start_idx + 15
+
         images_subset = images[start_idx:end_idx]
-        
+
         if len(images_subset) < 9:
-            logger.warning(f"Not enough images for page {page}, got {len(images_subset)}")
+            logger.warning(
+                f"Not enough images for page {page}, got {len(images_subset)}")
             images_subset = images[start_idx:]
-        
+
         if not images_subset:
             return templates.TemplateResponse("search.html", {
                 "request": request,
                 "error": "No more images available. Try a different search term."
             })
 
-        # Download images temporarily to extract features for balanced selection
+        # Download images temporarily to extract features for balanced
+        # selection
         temp_download_path = "dataset/temp_selection"
         os.makedirs(temp_download_path, exist_ok=True)
-        
+
         try:
             image_paths = download_images(images_subset, temp_download_path)
-            
+
             # Select balanced images (70% relevance, 30% dissimilarity)
             selected_images = select_balanced_images(
-                images_subset, 
-                image_paths, 
-                num_images=min(9, len(images_subset)), 
+                images_subset,
+                image_paths,
+                num_images=min(9, len(images_subset)),
                 relevance_weight=0.7
             )
-            logger.info(f"Selected {len(selected_images)} balanced images for query: {query} (page {page})")
+            logger.info(
+                f"Selected {len(selected_images)} balanced images for query: {query} (page {page})")
         except Exception as e:
-            logger.warning(f"Balanced selection failed, falling back to first 9 images: {e}")
+            logger.warning(
+                f"Balanced selection failed, falling back to first 9 images: {e}")
             selected_images = images_subset[:9]
         finally:
             # Clean up temporary downloads
@@ -268,7 +281,7 @@ async def run_training(image_urls, annotations, original_query):
 
         training_status["step"] = 2
         training_status["status"] = "Downloading"
-        
+
         if similar_images:
             training_status["detail"] = f"Downloading {len(similar_images)} similar images"
             try:
@@ -345,24 +358,25 @@ async def download_model(model: str = Query(...)):
     try:
         # Normalize the path and validate it exists
         model_path = os.path.normpath(model)
-        
+
         # Security check: ensure path is within project directory
         project_root = os.path.abspath(".")
         abs_model_path = os.path.abspath(model_path)
-        
+
         if not abs_model_path.startswith(project_root):
-            logger.error(f"Attempted to download file outside project directory: {abs_model_path}")
+            logger.error(
+                f"Attempted to download file outside project directory: {abs_model_path}")
             raise HTTPException(status_code=403, detail="Access denied")
-        
+
         if not os.path.exists(abs_model_path):
             logger.error(f"Model file not found: {abs_model_path}")
             raise HTTPException(status_code=404, detail="Model file not found")
-        
+
         # Get the filename for the download
         filename = os.path.basename(abs_model_path)
-        
+
         logger.info(f"Downloading model: {filename}")
-        
+
         return FileResponse(
             path=abs_model_path,
             media_type="application/octet-stream",
@@ -388,22 +402,21 @@ async def debug_api(request: Request):
     """Debug endpoint to test API configuration"""
     api_key = os.getenv("GOOGLE_API_KEY")
     search_engine_id = os.getenv("SEARCH_ENGINE_ID")
-    
+
     debug_info = {
         "api_key_set": bool(api_key),
         "api_key_preview": f"{api_key[:10]}..." if api_key else "NOT SET",
         "search_engine_id_set": bool(search_engine_id),
         "search_engine_id": search_engine_id,
     }
-    
+
     # Try to make a simple API call
     test_result = None
     if api_key and search_engine_id:
         try:
             test_url = (
                 f"https://www.googleapis.com/customsearch/v1?"
-                f"q=test&searchType=image&key={api_key}&cx={search_engine_id}&num=1"
-            )
+                f"q=test&searchType=image&key={api_key}&cx={search_engine_id}&num=1")
             response = requests.get(test_url, timeout=5)
             test_result = {
                 "status_code": response.status_code,
@@ -416,7 +429,7 @@ async def debug_api(request: Request):
                 "success": False,
                 "error": str(e)
             }
-    
+
     return templates.TemplateResponse("debug.html", {
         "request": request,
         "debug_info": debug_info,

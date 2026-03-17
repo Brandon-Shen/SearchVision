@@ -10,7 +10,8 @@ from src.download_images import download_images
 model = models.resnet50(weights='IMAGENET1K_V1')
 model = model.eval()  # Set the model to evaluation mode
 
-# Remove the final classification layer to extract 2048-dim features from avgpool
+# Remove the final classification layer to extract 2048-dim features from
+# avgpool
 feature_extractor = torch.nn.Sequential(*list(model.children())[:-1])
 feature_extractor = feature_extractor.eval()
 

@@ -24,7 +24,8 @@ logger = logging.getLogger(__name__)
 model = models.resnet50(weights='IMAGENET1K_V1')
 model = model.eval()  # Set the model to evaluation mode
 
-# Remove the final classification layer to extract 2048-dim features from avgpool
+# Remove the final classification layer to extract 2048-dim features from
+# avgpool
 feature_extractor = torch.nn.Sequential(*list(model.children())[:-1])
 feature_extractor = feature_extractor.eval()
 
@@ -42,7 +43,7 @@ def extract_features(image_path):
 
     Args:
         image_path: Path to the image.
-        
+
     Returns:
         Feature vector of the image (2048-dim from avgpool layer), or None if failed.
     """
@@ -58,7 +59,11 @@ def extract_features(image_path):
         return None
 
 
-def select_balanced_images(image_urls, image_paths, num_images=9, relevance_weight=0.7):
+def select_balanced_images(
+        image_urls,
+        image_paths,
+        num_images=9,
+        relevance_weight=0.7):
     """
     Selects images that balance search relevance with visual dissimilarity.
 
@@ -68,19 +73,20 @@ def select_balanced_images(image_urls, image_paths, num_images=9, relevance_weig
         num_images: Number of images to select (default 9)
         relevance_weight: Weight for relevance score (0-1). Dissimilarity weight = 1 - relevance_weight
                          Default 0.7 means 70% relevance, 30% dissimilarity
-                         
+
     Returns:
         List of selected image URLs, balanced between relevance and dissimilarity
     """
-    
+
     if len(image_urls) < num_images:
-        logger.warning(f"Requested {num_images} images but only {len(image_urls)} available")
+        logger.warning(
+            f"Requested {num_images} images but only {len(image_urls)} available")
         return image_urls
-    
+
     # Extract features from all images
     features_list = []
     valid_indices = []
-    
+
     for idx, path in enumerate(image_paths):
         feature = extract_features(path)
         if feature is not None:
@@ -88,47 +94,53 @@ def select_balanced_images(image_urls, image_paths, num_images=9, relevance_weig
             valid_indices.append(idx)
         else:
             logger.debug(f"Skipping image {idx} - could not extract features")
-    
+
     if len(features_list) < num_images:
-        logger.warning(f"Only {len(features_list)} images have valid features, returning top {min(len(image_urls), num_images)}")
+        logger.warning(
+            f"Only {len(features_list)} images have valid features, returning top {min(len(image_urls), num_images)}")
         return image_urls[:min(len(image_urls), num_images)]
-    
+
     features = np.array(features_list)
-    
+
     # Calculate dissimilarity scores based on visual features
     # Compute cosine distance matrix between image features
     distance_matrix = cosine_distances(features)
-    
-    # Calculate dissimilarity score for each image (sum of distances to all others)
+
+    # Calculate dissimilarity score for each image (sum of distances to all
+    # others)
     dissimilarity_scores = np.sum(distance_matrix, axis=1)
-    
+
     # Normalize both scores to 0-1 range
     dissimilarity_weight = 1 - relevance_weight
-    
+
     # Relevance score: images earlier in search results have higher relevance
     # Map position (0 to len-1) to relevance (1.0 to 0.0)
-    relevance_scores = 1.0 - np.arange(len(features_list)) / max(1, len(features_list) - 1)
-    
+    relevance_scores = 1.0 - \
+        np.arange(len(features_list)) / max(1, len(features_list) - 1)
+
     # Normalize dissimilarity scores to 0-1 range
     if dissimilarity_scores.max() > dissimilarity_scores.min():
-        dissimilarity_scores_norm = (dissimilarity_scores - dissimilarity_scores.min()) / (dissimilarity_scores.max() - dissimilarity_scores.min())
+        dissimilarity_scores_norm = (
+            dissimilarity_scores - dissimilarity_scores.min()) / (
+            dissimilarity_scores.max() - dissimilarity_scores.min())
     else:
         dissimilarity_scores_norm = dissimilarity_scores
-    
+
     # Combined score: weighted combination of relevance and dissimilarity
-    combined_scores = (relevance_weight * relevance_scores + 
-                      dissimilarity_weight * dissimilarity_scores_norm)
-    
+    combined_scores = (relevance_weight * relevance_scores +
+                       dissimilarity_weight * dissimilarity_scores_norm)
+
     # Select top num_images indices by combined score
     selected_feature_indices = np.argsort(combined_scores)[-num_images:][::-1]
-    
+
     # Map back to original image indices
     selected_indices = [valid_indices[idx] for idx in selected_feature_indices]
-    
+
     # Return selected image URLs
     selected_images = [image_urls[idx] for idx in selected_indices]
-    
-    logger.info(f"Selected {len(selected_images)} images using balanced strategy "
-               f"(relevance_weight={relevance_weight}, dissimilarity_weight={dissimilarity_weight})")
-    
+
+    logger.info(
+        f"Selected {len(selected_images)} images using balanced strategy "
+        f"(relevance_weight={relevance_weight}, dissimilarity_weight={dissimilarity_weight})")
+
     return selected_images
