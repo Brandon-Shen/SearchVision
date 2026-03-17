@@ -58,17 +58,32 @@ def train_model(data_yaml_path, model_type='yolov8'):
         )
 
         # Get the best model path
-        model_dir = "runs/detect/train"
+        model_dir = "runs/detect"
         if os.path.exists(model_dir):
-            latest_train_dir = max([os.path.join(model_dir, d) for d in os.listdir(model_dir)
-                                   if os.path.isdir(os.path.join(model_dir, d))],
-                                   key=os.path.getmtime)
+            train_dirs = [os.path.join(model_dir, d) for d in os.listdir(model_dir)
+                         if os.path.isdir(os.path.join(model_dir, d)) and d.startswith('train')]
+            
+            if not train_dirs:
+                logger.error("No training directories found in runs/detect")
+                return None
+            
+            latest_train_dir = max(train_dirs, key=os.path.getmtime)
             model_path = os.path.join(latest_train_dir, "weights", "best.pt")
-            logger.info(f"Model trained and saved at {model_path}")
-            return model_path
+            
+            if os.path.exists(model_path):
+                logger.info(f"Model trained and saved at {model_path}")
+                return model_path
+            else:
+                logger.error(f"Model file not found at {model_path}")
+                # Try to find if last.pt exists as fallback
+                last_path = os.path.join(latest_train_dir, "weights", "last.pt")
+                if os.path.exists(last_path):
+                    logger.info(f"best.pt not found, using last.pt at {last_path}")
+                    return last_path
+                return None
         else:
             logger.error(
-                "Training directory not found. Training may have failed.")
+                "Training directory not found at runs/detect. Training may have failed.")
             return None
 
     except Exception as e:

@@ -94,6 +94,24 @@
     max-width: 900px;
 }
 
+.button-group {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 15px;
+}
+
+.btn-secondary {
+    background: #6c757d;
+    border-color: #6c757d;
+}
+
+.btn-secondary:hover {
+    background: #5a6268;
+    border-color: #5a6268;
+}
+
 .submit-section p {
     color: #666;
     margin-bottom: 15px;
@@ -134,7 +152,14 @@
     
     <div class="submit-section">
         <p>Selected: <span id="count">0</span> images <span class="selected-count">Minimum 3 required</span></p>
-        <button type="submit" class="btn btn-success">Continue to Annotation</button>
+        <div class="button-group">
+            <button type="submit" class="btn btn-success">Continue to Annotation</button>
+            <form method="post" action="/search" style="display: inline;">
+                <input type="hidden" name="query" value="{{ query }}">
+                <input type="hidden" name="page" value="{{ current_page | default(0) + 1 }}">
+                <button type="submit" class="btn btn-secondary">Search Again</button>
+            </form>
+        </div>
     </div>
 </form>
 

@@ -16,11 +16,25 @@ def convert_to_yolo_format(json_annotation, img_width, img_height):
     Returns:
         YOLO format string: "<class> <x_center> <y_center> <width> <height>"
     """
-    # Parse JSON string to dict
-    data = json.loads(json_annotation)
+    # Handle empty or None annotations
+    if not json_annotation or json_annotation == '{}' or json_annotation == '[]':
+        return ""
+    
+    try:
+        # Parse JSON string to dict or list
+        data = json.loads(json_annotation)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    
+    # Handle case where data is a list (backward compatibility)
+    if isinstance(data, list):
+        if len(data) == 0:
+            return ""
+        # Convert list format to dict format with rects
+        data = {"rects": data, "canvasWidth": img_width, "canvasHeight": img_height}
 
     # Check if it's the new format with rects array
-    if 'rects' in data and isinstance(
+    if isinstance(data, dict) and 'rects' in data and isinstance(
             data['rects'], list) and len(
             data['rects']) > 0:
         rects = data['rects']
@@ -73,23 +87,27 @@ def convert_to_yolo_format(json_annotation, img_width, img_height):
 
         return "\n".join(yolo_lines)
 
-    # Legacy format: simple x, y, width, height
-    bbox = data
+    # Legacy format: simple x, y, width, height (only if it's a dict with those keys)
+    if isinstance(data, dict) and 'x' in data and 'y' in data:
+        bbox = data
 
-    # YOLO uses center coordinates and normalized dimensions
-    x_center = (bbox['x'] + bbox['width'] / 2) / img_width
-    y_center = (bbox['y'] + bbox['height'] / 2) / img_height
-    width = abs(bbox['width'] / img_width)
-    height = abs(bbox['height'] / img_height)
+        # YOLO uses center coordinates and normalized dimensions
+        x_center = (bbox['x'] + bbox['width'] / 2) / img_width
+        y_center = (bbox['y'] + bbox['height'] / 2) / img_height
+        width = abs(bbox['width'] / img_width)
+        height = abs(bbox['height'] / img_height)
 
-    # Clamp values between 0 and 1
-    x_center = max(0, min(1, x_center))
-    y_center = max(0, min(1, y_center))
-    width = max(0, min(1, width))
-    height = max(0, min(1, height))
+        # Clamp values between 0 and 1
+        x_center = max(0, min(1, x_center))
+        y_center = max(0, min(1, y_center))
+        width = max(0, min(1, width))
+        height = max(0, min(1, height))
 
-    # Return YOLO format string (class 0)
-    return f"0 {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}"
+        # Return YOLO format string (class 0)
+        return f"0 {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}"
+    
+    # If no valid format found, return empty string
+    return ""
 
 
 def ensure_directory(directory):

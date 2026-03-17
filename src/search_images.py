@@ -2,6 +2,7 @@ import requests
 import json
 import logging
 import re
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -86,55 +87,82 @@ def _search_google_custom_search(query, api_key, search_engine_id, num_results=1
 def _search_bing_images(query, num_results=10):
     """
     Search using Bing Images (free, no API key required)
-    Scrapes image URLs from Bing image search
+    Scrapes image URLs from Bing image search with retry logic.
+    Strips problematic filter syntax before searching.
     """
     images = []
+    max_retries = 3
+    retry_count = 0
     
-    try:
-        # Bing Images search URL
-        search_url = "https://www.bing.com/images/search"
-        
-        params = {
-            "q": query,
-            "count": min(num_results, 35),
-        }
-        
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
-        
-        response = requests.get(search_url, params=params, headers=headers, timeout=10)
-        logger.debug(f"Bing Images Response Status: {response.status_code}")
-        
-        if response.status_code != 200:
-            raise Exception(f"Bing Images returned status {response.status_code}")
-        
-        # Extract image URLs from the HTML response using regex
-        # Bing stores lazy-loaded images in data-src attributes
-        # These are Bing image proxy URLs (tse1.mm.bing.net, etc.)
-        image_pattern = r'<img[^>]+data-src="([^"]+)"'
-        matches = re.findall(image_pattern, response.text)
-        
-        if not matches:
-            raise Exception("No images found on Bing Images")
-        
-        # Process URLs and decode HTML entities
-        for url in matches:
-            if url.startswith('http') and len(images) < num_results:
-                # Decode HTML entities (e.g., &amp; to &)
-                url = url.replace('&amp;', '&')
-                url = url.replace('\\/', '/')
-                images.append(url)
-        
-        if not images:
-            raise Exception("No valid image URLs found")
-        
-        logger.info(f"Bing Images search returned {len(images)} images for query: {query}")
-        return images[:num_results]
-        
-    except Exception as e:
-        logger.error(f"Bing Images error: {str(e)}")
-        raise
+    # Clean up query: remove Google-style filters that Bing doesn't understand
+    clean_query = query
+    clean_query = clean_query.replace(" filetype:jpg", "").replace(" filetype:png", "")
+    clean_query = clean_query.replace(" OR ", " ")  # Replace OR with space
+    clean_query = clean_query.strip()
+    
+    logger.debug(f"Bing Images search query cleaned: '{query}' -> '{clean_query}'")
+    
+    while retry_count < max_retries:
+        try:
+            # Bing Images search URL
+            search_url = "https://www.bing.com/images/search"
+            
+            params = {
+                "q": clean_query,
+                "count": min(num_results, 35),
+            }
+            
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            }
+            
+            response = requests.get(search_url, params=params, headers=headers, timeout=10)
+            logger.debug(f"Bing Images Response Status: {response.status_code}")
+            
+            if response.status_code != 200:
+                raise Exception(f"Bing Images returned status {response.status_code}")
+            
+            # Extract image URLs from the HTML response using regex
+            # Bing stores lazy-loaded images in data-src attributes
+            # These are Bing image proxy URLs (tse1.mm.bing.net, etc.)
+            image_pattern = r'<img[^>]+data-src="([^"]+)"'
+            matches = re.findall(image_pattern, response.text)
+            
+            if not matches:
+                logger.debug(f"No images found on Bing Images (attempt {retry_count + 1}/{max_retries})")
+                retry_count += 1
+                if retry_count < max_retries:
+                    time.sleep(1)  # Wait before retrying
+                    continue
+                raise Exception("No images found on Bing Images after retries")
+            
+            # Process URLs and decode HTML entities
+            for url in matches:
+                if url.startswith('http') and len(images) < num_results:
+                    # Decode HTML entities (e.g., &amp; to &)
+                    url = url.replace('&amp;', '&')
+                    url = url.replace('\\/', '/')
+                    images.append(url)
+            
+            if not images:
+                logger.debug(f"No valid image URLs found (attempt {retry_count + 1}/{max_retries})")
+                retry_count += 1
+                if retry_count < max_retries:
+                    time.sleep(1)
+                    continue
+                raise Exception("No valid image URLs found after retries")
+            
+            logger.info(f"Bing Images search returned {len(images)} images for query: {clean_query}")
+            return images[:num_results]
+            
+        except Exception as e:
+            if retry_count < max_retries - 1:
+                logger.debug(f"Bing Images error (attempt {retry_count + 1}/{max_retries}): {str(e)}")
+                retry_count += 1
+                time.sleep(1)
+            else:
+                logger.error(f"Bing Images error after {max_retries} attempts: {str(e)}")
+                raise
 
 
 def _parse_google_api_error(response):

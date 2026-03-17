@@ -2,4 +2,4 @@ path: C:\Users\Brandon Shen\Documents\SearchVision\dataset
 train: C:\Users\Brandon Shen\Documents\SearchVision\dataset\train\images
 val: C:\Users\Brandon Shen\Documents\SearchVision\dataset\train\images
 names:
-  0: basketball
+  0: soccer ball
