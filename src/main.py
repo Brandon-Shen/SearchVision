@@ -139,21 +139,34 @@ async def search(
         os.makedirs(temp_download_path, exist_ok=True)
 
         try:
-            image_paths = download_images(images_subset, temp_download_path)
+            # Extract URLs from metadata if using new format
+            if images_subset and isinstance(images_subset[0], dict):
+                urls_to_download = [r['url'] for r in images_subset]
+            else:
+                urls_to_download = images_subset
 
-            # Select balanced images (70% relevance, 30% dissimilarity)
+            image_paths = download_images(urls_to_download, temp_download_path)
+
+            # Select balanced images (60% popularity, 25% caption, 15% dissimilarity)
             selected_images = select_balanced_images(
                 images_subset,
                 image_paths,
+                query=query,
                 num_images=min(9, len(images_subset)),
-                relevance_weight=0.7
+                popularity_weight=0.6,
+                caption_weight=0.25,
+                dissimilarity_weight=0.15
             )
             logger.info(
                 f"Selected {len(selected_images)} balanced images for query: {query} (page {page})")
         except Exception as e:
             logger.warning(
                 f"Balanced selection failed, falling back to first 9 images: {e}")
-            selected_images = images_subset[:9]
+            # Extract URLs from metadata if needed
+            if images_subset and isinstance(images_subset[0], dict):
+                selected_images = [r['url'] for r in images_subset[:9]]
+            else:
+                selected_images = images_subset[:9]
         finally:
             # Clean up temporary downloads
             if os.path.exists(temp_download_path):

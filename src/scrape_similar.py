@@ -15,6 +15,9 @@ def scrape_similar_images(
     Scrape similar images for training augmentation.
     Uses multiple query variations to find diverse training images.
     Falls back gracefully if search fails.
+
+    Returns:
+        List of image URLs (strips metadata for compatibility)
     """
     similar_images = []
 
@@ -41,16 +44,18 @@ def scrape_similar_images(
         try:
             logger.debug(f"Attempting search with query: {query}")
 
-            images = search_images(
+            results = search_images(
                 query,
                 api_key,
                 search_engine_id,
                 num_results=num_results_per_image
             )
 
-            if images:
-                logger.info(f"Got {len(images)} images from query: {query}")
-                similar_images.extend(images)
+            if results:
+                # Extract URLs from metadata dicts
+                urls = [r['url'] for r in results]
+                logger.info(f"Got {len(urls)} images from query: {query}")
+                similar_images.extend(urls)
             else:
                 logger.debug(f"No images from query: {query}")
 

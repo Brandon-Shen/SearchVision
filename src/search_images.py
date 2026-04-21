@@ -11,6 +11,13 @@ def search_images(query, api_key, search_engine_id, num_results=10):
     """
     Search for images using Google Custom Search API.
     Falls back to Bing Images if Google fails (no API key needed).
+
+    Returns:
+        List of dicts containing image metadata: {
+            'url': image_url,
+            'title': caption/title,
+            'snippet': description
+        }
     """
     images = []
     google_error = None
@@ -53,7 +60,10 @@ def _search_google_custom_search(
         api_key,
         search_engine_id,
         num_results=10):
-    """Search using Google Custom Search API"""
+    """
+    Search using Google Custom Search API.
+    Extracts image URLs, titles, and snippets for relevancy ranking.
+    """
     images = []
     results_per_page = 10
     start_index = 1
@@ -78,7 +88,11 @@ def _search_google_custom_search(
                 break
 
             for item in data['items']:
-                images.append(item['link'])
+                images.append({
+                    'url': item['link'],
+                    'title': item.get('title', ''),
+                    'snippet': item.get('snippet', '')
+                })
 
             start_index += results_per_page
 
@@ -93,8 +107,7 @@ def _search_google_custom_search(
 def _search_bing_images(query, num_results=10):
     """
     Search using Bing Images (free, no API key required)
-    Scrapes image URLs from Bing image search with retry logic.
-    Strips problematic filter syntax before searching.
+    Scrapes image URLs and captions from Bing image search.
     """
     images = []
     max_retries = 3
@@ -137,10 +150,9 @@ def _search_bing_images(query, num_results=10):
                 raise Exception(
                     f"Bing Images returned status {response.status_code}")
 
-            # Extract image URLs from the HTML response using regex
-            # Bing stores lazy-loaded images in data-src attributes
-            # These are Bing image proxy URLs (tse1.mm.bing.net, etc.)
-            image_pattern = r'<img[^>]+data-src="([^"]+)"'
+            # Extract image URLs and captions from HTML
+            # Bing stores images in img tags with data-src attributes
+            image_pattern = r'<img[^>]+data-src="([^"]+)"[^>]+alt="([^"]*)"'
             matches = re.findall(image_pattern, response.text)
 
             if not matches:
@@ -152,13 +164,17 @@ def _search_bing_images(query, num_results=10):
                     continue
                 raise Exception("No images found on Bing Images after retries")
 
-            # Process URLs and decode HTML entities
-            for url in matches:
+            # Process URLs and captions
+            for url, caption in matches:
                 if url.startswith('http') and len(images) < num_results:
                     # Decode HTML entities (e.g., &amp; to &)
                     url = url.replace('&amp;', '&')
                     url = url.replace('\\/', '/')
-                    images.append(url)
+                    images.append({
+                        'url': url,
+                        'title': caption,
+                        'snippet': caption
+                    })
 
             if not images:
                 logger.debug(
