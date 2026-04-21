@@ -166,3 +166,4 @@ app_logs.txt
 .aider*
 *.tex
 runs/
+*.md
