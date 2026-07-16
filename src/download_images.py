@@ -2,9 +2,11 @@
 
 import requests
 import os
+from io import BytesIO
+from PIL import Image
 
 
-def download_images(image_urls, download_path="dataset/train/images"):
+def download_images(image_urls, download_path="dataset/train/images", filename_prefix="image"):
     """
     Downloads images from a list of URLs and saves them to the specified directory.
 
@@ -32,9 +34,15 @@ def download_images(image_urls, download_path="dataset/train/images"):
         try:
             response = requests.get(url, timeout=10)
             if response.status_code == 200:
-                file_path = os.path.join(download_path, f"image_{idx}.jpg")
+                response.raise_for_status()
+                # Reject HTML/error pages returned with a 200 response and
+                # normalize all inputs to a format YOLO can reliably open.
+                with Image.open(BytesIO(response.content)) as image:
+                    image = image.convert("RGB")
+                    image.load()
+                file_path = os.path.join(download_path, f"{filename_prefix}_{idx}.jpg")
                 with open(file_path, "wb") as f:
-                    f.write(response.content)
+                    image.save(f, format="JPEG", quality=95)
                 print(f"Downloaded: {file_path}")
                 # Store both the original index and the file path
                 downloaded_paths.append((idx, file_path))

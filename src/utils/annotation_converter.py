@@ -41,9 +41,6 @@ def convert_to_yolo_format(json_annotation, img_width, img_height):
             data['rects'], list) and len(
             data['rects']) > 0:
         rects = data['rects']
-        canvas_width = data.get('canvasWidth', img_width)
-        canvas_height = data.get('canvasHeight', img_height)
-
         # Get image element info if available
         img_info = data.get('imageElement')
         if img_info:
@@ -64,20 +61,23 @@ def convert_to_yolo_format(json_annotation, img_width, img_height):
             width = rect['width']
             height = rect['height']
 
-            # Scale from canvas coordinates to image coordinates
-            scale_x = display_width / canvas_width
-            scale_y = display_height / canvas_height
+            if display_width <= 0 or display_height <= 0:
+                continue
 
-            x_scaled = (x - offset_x) / scale_x
-            y_scaled = (y - offset_y) / scale_y
-            width_scaled = width / scale_x
-            height_scaled = height / scale_y
+            # Canvas coordinates are relative to the displayed (letterboxed)
+            # image. Normalizing by that display rectangle is equivalent to
+            # scaling back to the source image and is less error-prone.
+            left = max(0.0, min(display_width, x - offset_x))
+            top = max(0.0, min(display_height, y - offset_y))
+            right = max(0.0, min(display_width, x + width - offset_x))
+            bottom = max(0.0, min(display_height, y + height - offset_y))
+            if right <= left or bottom <= top:
+                continue
 
-            # Convert to YOLO format (normalized)
-            x_center = (x_scaled + width_scaled / 2) / img_width
-            y_center = (y_scaled + height_scaled / 2) / img_height
-            width_norm = abs(width_scaled / img_width)
-            height_norm = abs(height_scaled / img_height)
+            x_center = ((left + right) / 2) / display_width
+            y_center = ((top + bottom) / 2) / display_height
+            width_norm = (right - left) / display_width
+            height_norm = (bottom - top) / display_height
 
             # Clamp values between 0 and 1
             x_center = max(0, min(1, x_center))

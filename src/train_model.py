@@ -49,7 +49,7 @@ def train_model(data_yaml_path, model_type='yolov8'):
         # Train with specific parameters
         results = model.train(
             data=data_yaml_path,
-            epochs=25,            # Default epochs for training
+            epochs=50,
             imgsz=640,            # Image size
             batch=batch_size,     # Auto batch size based on VRAM
             patience=10,          # Early stopping patience
@@ -58,7 +58,12 @@ def train_model(data_yaml_path, model_type='yolov8'):
         )
 
         # Get the best model path
-        model_dir = "runs/detect"
+        metrics = getattr(results, "results_dict", {}) or {}
+        map50 = metrics.get("metrics/mAP50(B)")
+        if map50 is not None:
+            logger.info("Validation mAP50: %.1f%%", float(map50) * 100)
+
+        model_dir = os.path.dirname(str(getattr(results, "save_dir", ""))) or "runs/detect"
         if os.path.exists(model_dir):
             train_dirs = [
                 os.path.join(

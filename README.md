@@ -38,6 +38,30 @@ SearchVision is designed to provide a seamless experience for users to perform i
 4. **Train Model**: Use the selected and scraped images to train a YOLOv8 object detection model.
 5. **View Results**: Monitor the progress and see the results of the model training.
 
+## Model quality
+
+SearchVision uses a real held-out validation split and logs YOLO's validation
+`mAP50` after training. An 80% mAP50 score is a useful target, not a guarantee:
+it depends primarily on annotation quality, class difficulty, and coverage of the
+target's appearances. For a credible result, annotate at least 20 diverse images
+(the UI permits 5 for quick experiments) and inspect the generated labels.
+
+Automatic labels are only created when the requested object maps to a class known
+by the pretrained COCO model. For a custom object, scraped images are deliberately
+left out instead of being assigned misleading boxes; provide human annotations for
+those classes.
+
+## Local setup
+
+```powershell
+python -m pip install -r requirements.txt
+python -m uvicorn src.main:app --reload
+```
+
+Set `GOOGLE_API_KEY` and `SEARCH_ENGINE_ID` in `.env` for Google Custom Search.
+Without them the application attempts its Bing fallback. Run tests with
+`python -m pytest -q`.
+
 ## Technology Stack
 
 - **FastAPI**: A modern, fast (high-performance), web framework for building APIs with Python 3.7+.

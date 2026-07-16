@@ -3,13 +3,9 @@
 from src.search_images import search_images
 
 
-def test_search_images():
-    """Test search_images with a sample query."""
-    api_key = "YOUR_API_KEY"
-    search_engine_id = "YOUR_SEARCH_ENGINE_ID"
-    query = "cat"
-
-    results = search_images(query, api_key, search_engine_id)
+def test_search_images_uses_fallback_without_credentials(monkeypatch):
+    expected = [{"url": "https://example.com/cat.jpg", "title": "cat", "snippet": "cat"}]
+    monkeypatch.setattr("src.search_images._search_bing_images", lambda query, count: expected)
+    results = search_images("cat", None, None)
     assert isinstance(results, list)
-    assert len(results) > 0
-    assert all(isinstance(url, str) for url in results)
+    assert results == expected

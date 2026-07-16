@@ -27,6 +27,12 @@ app = FastAPI()
 
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 
+
+def render_template(name, context):
+    """Render using keywords compatible with current and recent Starlette."""
+    return templates.TemplateResponse(
+        request=context["request"], name=name, context=context)
+
 log_file_path = os.path.join(os.getcwd(), 'app_logs.txt')
 logging.basicConfig(
     level=logging.INFO,
@@ -81,7 +87,9 @@ def reset_training_status(query):
 async def index(request: Request):
     clear_directory(images_path)
     clear_directory(labels_path)
-    return templates.TemplateResponse("search.html", {"request": request})
+    clear_directory("dataset/val/images")
+    clear_directory("dataset/val/labels")
+    return render_template("search.html", {"request": request})
 
 
 @app.post("/search", response_class=HTMLResponse)
@@ -94,12 +102,6 @@ async def search(
         api_key = os.getenv("GOOGLE_API_KEY")
         search_engine_id = os.getenv("SEARCH_ENGINE_ID")
 
-        if not api_key or not search_engine_id:
-            return templates.TemplateResponse("search.html", {
-                "request": request,
-                "error": "API keys not configured. Please set GOOGLE_API_KEY and SEARCH_ENGINE_ID in .env"
-            })
-
         # Fetch more images to allow pagination/different selections
         # Fetch 30 images so user can get different results on "Search Again"
         images = search_images(
@@ -109,7 +111,7 @@ async def search(
             num_results=30)
 
         if not images:
-            return templates.TemplateResponse("search.html", {
+            return render_template("search.html", {
                 "request": request,
                 "error": "No images found. Try a different search term."
             })
@@ -128,7 +130,7 @@ async def search(
             images_subset = images[start_idx:]
 
         if not images_subset:
-            return templates.TemplateResponse("search.html", {
+            return render_template("search.html", {
                 "request": request,
                 "error": "No more images available. Try a different search term."
             })
@@ -172,7 +174,7 @@ async def search(
             if os.path.exists(temp_download_path):
                 shutil.rmtree(temp_download_path)
 
-        return templates.TemplateResponse("select.html", {
+        return render_template("select.html", {
             "request": request,
             "query": query,
             "images": selected_images,
@@ -180,7 +182,7 @@ async def search(
         })
     except Exception as e:
         logger.error(f"Error during image search: {e}")
-        return templates.TemplateResponse("search.html", {
+        return render_template("search.html", {
             "request": request,
             "error": f"Search failed: {str(e)}"
         })
@@ -192,25 +194,35 @@ async def select(
         selected_images: list[str] = Form(...),
         original_query: str = Form(...)):
     try:
-        if not selected_images or len(selected_images) < 3:
+        if not selected_images or len(selected_images) < 5:
             raise HTTPException(status_code=400,
-                                detail="Please select at least 3 images.")
+                                detail="Please select at least 5 images.")
 
         clear_directory(images_path)
         clear_directory(labels_path)
+        clear_directory("dataset/val/images")
+        clear_directory("dataset/val/labels")
 
-        local_image_paths = download_images(selected_images, download_path)
+        local_image_paths = download_images(
+            selected_images, download_path, filename_prefix="selected")
+
+        if len(local_image_paths) < 5:
+            raise HTTPException(
+                status_code=400,
+                detail="At least 5 selected images must download successfully.")
 
         images_data = [
             (f"/images/{os.path.basename(path)}", os.path.basename(path))
-            for path in local_image_paths
+            for _, path in local_image_paths
         ]
 
-        return templates.TemplateResponse("annotate.html", {
+        return render_template("annotate.html", {
             "request": request,
             "query": original_query,
             "images": images_data
         })
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error during image selection: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -231,7 +243,7 @@ async def start_training(
                 annotations,
                 original_query))
 
-        return templates.TemplateResponse("training.html", {
+        return render_template("training.html", {
             "request": request,
             "query": original_query
         })
@@ -251,6 +263,10 @@ async def run_training(image_urls, annotations, original_query):
             labels_dir := os.path.join(
                 "dataset", "train", "labels"))
 
+        if len(image_urls) != len(annotations):
+            raise ValueError("Every selected image must have an annotation payload")
+
+        valid_annotations = 0
         for image_url, annotation_json in zip(image_urls, annotations):
             try:
                 image_name = os.path.basename(image_url)
@@ -267,8 +283,13 @@ async def run_training(image_urls, annotations, original_query):
 
                 with open(label_path, 'w') as f:
                     f.write(yolo_annotation)
+                if yolo_annotation:
+                    valid_annotations += 1
             except Exception as e:
                 logger.error(f"Error processing annotation: {e}")
+
+        if valid_annotations < 5:
+            raise ValueError("Draw at least one valid bounding box on each of 5 images")
 
         training_status["step"] = 1
         training_status["status"] = "Scraping"
@@ -298,7 +319,8 @@ async def run_training(image_urls, annotations, original_query):
         if similar_images:
             training_status["detail"] = f"Downloading {len(similar_images)} similar images"
             try:
-                download_images(similar_images, images_path)
+                download_images(
+                    similar_images, images_path, filename_prefix="scraped")
             except Exception as e:
                 logger.warning(f"Failed to download similar images: {e}")
                 logger.info("Continuing training with only annotated images")
@@ -309,7 +331,7 @@ async def run_training(image_urls, annotations, original_query):
         training_status["status"] = "Annotating"
         training_status["detail"] = "Auto-annotating scraped images"
 
-        auto_annotate_images(images_path, labels_dir)
+        auto_annotate_images(images_path, labels_dir, target_class=original_query)
 
         training_status["step"] = 4
         training_status["status"] = "Training"
@@ -317,7 +339,8 @@ async def run_training(image_urls, annotations, original_query):
 
         data_yaml_path = create_data_yaml(labels_dir, original_query)
 
-        model_path = train_model(data_yaml_path, 'yolov8')
+        model_path = await asyncio.to_thread(
+            train_model, data_yaml_path, 'yolov8')
 
         if model_path and os.path.exists(model_path):
             training_status["completed"] = True
@@ -354,10 +377,10 @@ async def results(request: Request, model: str = Query(...)):
     stats = {
         "images": images_count,
         "annotations": labels_count,
-        "epochs": 25
+        "epochs": 50
     }
 
-    return templates.TemplateResponse("results.html", {
+    return render_template("results.html", {
         "request": request,
         "query": query,
         "model_path": model,
@@ -376,7 +399,7 @@ async def download_model(model: str = Query(...)):
         project_root = os.path.abspath(".")
         abs_model_path = os.path.abspath(model_path)
 
-        if not abs_model_path.startswith(project_root):
+        if os.path.commonpath([project_root, abs_model_path]) != project_root:
             logger.error(
                 f"Attempted to download file outside project directory: {abs_model_path}")
             raise HTTPException(status_code=403, detail="Access denied")
@@ -404,7 +427,7 @@ async def download_model(model: str = Query(...)):
 
 @app.get("/error", response_class=HTMLResponse)
 async def error_page(request: Request, message: str = Query(...)):
-    return templates.TemplateResponse("error.html", {
+    return render_template("error.html", {
         "request": request,
         "error": message
     })
@@ -443,7 +466,7 @@ async def debug_api(request: Request):
                 "error": str(e)
             }
 
-    return templates.TemplateResponse("debug.html", {
+    return render_template("debug.html", {
         "request": request,
         "debug_info": debug_info,
         "test_result": test_result

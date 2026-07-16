@@ -131,11 +131,12 @@
 {% block content %}
 <div class="selection-info">
     <h2>Select images for: "{{ query }}"</h2>
-    <p>Choose at least 3 images that clearly show the object you want to detect</p>
+    <p>Choose at least 5 images that clearly show the object you want to detect</p>
 </div>
 
 <form action="/select" method="post" id="selection-form" class="form-wrapper">
     <input type="hidden" name="original_query" value="{{ query }}">
+    <input type="hidden" name="query" value="{{ query }}">
     
     <div class="image-grid">
         {% for image_url in images %}
@@ -151,14 +152,12 @@
     </div>
     
     <div class="submit-section">
-        <p>Selected: <span id="count">0</span> images <span class="selected-count">Minimum 3 required</span></p>
+        <p>Selected: <span id="count">0</span> images <span class="selected-count">Minimum 5 required</span></p>
         <div class="button-group">
             <button type="submit" class="btn btn-success">Continue to Annotation</button>
-            <form method="post" action="/search" style="display: inline;">
-                <input type="hidden" name="query" value="{{ query }}">
-                <input type="hidden" name="page" value="{{ current_page | default(0) + 1 }}">
-                <button type="submit" class="btn btn-secondary">Search Again</button>
-            </form>
+            <button type="submit" class="btn btn-secondary" formnovalidate
+                    formaction="/search" name="page"
+                    value="{{ current_page | default(0) + 1 }}">Search Again</button>
         </div>
     </div>
 </form>
@@ -177,10 +176,13 @@ function updateCount() {
 }
 
 document.getElementById('selection-form').addEventListener('submit', function(e) {
+    if (e.submitter && e.submitter.getAttribute('formaction') === '/search') {
+        return;
+    }
     const count = document.querySelectorAll('input[name="selected_images"]:checked').length;
-    if (count < 3) {
+    if (count < 5) {
         e.preventDefault();
-        alert('Please select at least 3 images to continue.');
+        alert('Please select at least 5 images to continue.');
     }
 });
 </script>

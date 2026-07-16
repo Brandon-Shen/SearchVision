@@ -23,16 +23,17 @@ def search_images(query, api_key, search_engine_id, num_results=10):
     google_error = None
 
     # Try Google Custom Search first
-    try:
-        images = _search_google_custom_search(
-            query, api_key, search_engine_id, num_results)
-        if images:
-            logger.info(
-                f"Successfully retrieved {len(images)} images from Google Custom Search")
-            return images
-    except Exception as e:
-        google_error = str(e)
-        logger.warning(f"Google Custom Search failed: {google_error}")
+    if api_key and search_engine_id:
+        try:
+            images = _search_google_custom_search(
+                query, api_key, search_engine_id, num_results)
+            if images:
+                logger.info(
+                    f"Successfully retrieved {len(images)} images from Google Custom Search")
+                return images
+        except Exception as e:
+            google_error = str(e)
+            logger.warning(f"Google Custom Search failed: {google_error}")
 
     # Fallback to Bing Images (free, no API key needed)
     try:

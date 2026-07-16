@@ -25,14 +25,16 @@ from src.utils.caption_relevance import compute_batch_caption_relevance
 
 logger = logging.getLogger(__name__)
 
-# Load a pre-trained ResNet50 model for feature extraction
-model = models.resnet50(weights='IMAGENET1K_V1')
-model = model.eval()  # Set the model to evaluation mode
+feature_extractor = None
 
-# Remove the final classification layer to extract 2048-dim features from
-# avgpool
-feature_extractor = torch.nn.Sequential(*list(model.children())[:-1])
-feature_extractor = feature_extractor.eval()
+
+def _get_feature_extractor():
+    """Load the optional ranking model on first use, not during API startup."""
+    global feature_extractor
+    if feature_extractor is None:
+        model = models.resnet50(weights='IMAGENET1K_V1').eval()
+        feature_extractor = torch.nn.Sequential(*list(model.children())[:-1]).eval()
+    return feature_extractor
 
 # Transformation for input images (resize, normalize, etc.)
 transform = transforms.Compose([
@@ -56,7 +58,7 @@ def extract_features(image_path):
         image = Image.open(image_path).convert('RGB')
         image_tensor = transform(image).unsqueeze(0)
         with torch.no_grad():
-            features = feature_extractor(image_tensor)
+            features = _get_feature_extractor()(image_tensor)
             features = features.flatten().numpy()
         return features
     except Exception as e:

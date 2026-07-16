@@ -10,3 +10,7 @@ numpy
 scikit-learn
 pillow
 python-dotenv
+jinja2
+pyyaml
+pytest
+httpx
