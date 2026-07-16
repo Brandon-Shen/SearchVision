@@ -3,6 +3,7 @@ import json
 import logging
 import re
 import time
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
@@ -151,10 +152,24 @@ def _search_bing_images(query, num_results=10):
                 raise Exception(
                     f"Bing Images returned status {response.status_code}")
 
-            # Extract image URLs and captions from HTML
-            # Bing stores images in img tags with data-src attributes
-            image_pattern = r'<img[^>]+data-src="([^"]+)"[^>]+alt="([^"]*)"'
-            matches = re.findall(image_pattern, response.text)
+            # Bing stores original-resolution URLs as JSON in result anchors.
+            # Prefer those over the 150px thumbnails used by the old parser.
+            matches = []
+            soup = BeautifulSoup(response.text, "html.parser")
+            for anchor in soup.select("a.iusc[m]"):
+                try:
+                    metadata = json.loads(anchor.get("m", "{}"))
+                    url = metadata.get("murl")
+                    caption = metadata.get("t", "")
+                    if url:
+                        matches.append((url, caption))
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+            # Retain a thumbnail fallback in case Bing changes its metadata.
+            if not matches:
+                image_pattern = r'<img[^>]+data-src="([^"]+)"[^>]+alt="([^"]*)"'
+                matches = re.findall(image_pattern, response.text)
 
             if not matches:
                 logger.debug(

@@ -27,20 +27,25 @@ def get_optimal_batch_size():
         return 4
 
 
-def train_model(data_yaml_path, model_type='yolov8'):
+def train_model(data_yaml_path, model_type=None):
     """
     Trains the YOLO model using the annotated dataset.
 
     Args:
         data_yaml_path: Path to the data.yaml file containing dataset configuration
-        model_type: Type of YOLO model to train ('yolov8' recommended)
+        model_type: Optional weights path/name. Defaults to the YOLO_MODEL
+                    environment variable or accuracy-first yolov8m.pt.
 
     Returns:
         Path to the trained model
     """
     try:
-        # Initialize YOLO model
-        model = YOLO('yolov8n.pt')  # Start with pre-trained model
+        # The medium backbone materially improves localization accuracy over
+        # nano. Resource-constrained deployments can set YOLO_MODEL=yolov8n.pt.
+        model_weights = model_type or os.getenv('YOLO_MODEL', 'yolov8m.pt')
+        if model_weights == 'yolov8':  # Backward compatibility with old caller.
+            model_weights = os.getenv('YOLO_MODEL', 'yolov8m.pt')
+        model = YOLO(model_weights)
 
         # Determine optimal batch size based on available VRAM
         batch_size = get_optimal_batch_size()
@@ -49,7 +54,7 @@ def train_model(data_yaml_path, model_type='yolov8'):
         # Train with specific parameters
         results = model.train(
             data=data_yaml_path,
-            epochs=50,
+            epochs=75,
             imgsz=640,            # Image size
             batch=batch_size,     # Auto batch size based on VRAM
             patience=10,          # Early stopping patience
@@ -60,25 +65,15 @@ def train_model(data_yaml_path, model_type='yolov8'):
         # Get the best model path
         metrics = getattr(results, "results_dict", {}) or {}
         map50 = metrics.get("metrics/mAP50(B)")
+        map50_95 = metrics.get("metrics/mAP50-95(B)")
         if map50 is not None:
             logger.info("Validation mAP50: %.1f%%", float(map50) * 100)
+        if map50_95 is not None:
+            logger.info("Validation mAP50-95: %.1f%%", float(map50_95) * 100)
 
-        model_dir = os.path.dirname(str(getattr(results, "save_dir", ""))) or "runs/detect"
-        if os.path.exists(model_dir):
-            train_dirs = [
-                os.path.join(
-                    model_dir,
-                    d) for d in os.listdir(model_dir) if os.path.isdir(
-                    os.path.join(
-                        model_dir,
-                        d)) and d.startswith('train')]
-
-            if not train_dirs:
-                logger.error("No training directories found in runs/detect")
-                return None
-
-            latest_train_dir = max(train_dirs, key=os.path.getmtime)
-            model_path = os.path.join(latest_train_dir, "weights", "best.pt")
+        save_dir = str(getattr(results, "save_dir", ""))
+        if save_dir and os.path.isdir(save_dir):
+            model_path = os.path.join(save_dir, "weights", "best.pt")
 
             if os.path.exists(model_path):
                 logger.info(f"Model trained and saved at {model_path}")
@@ -87,7 +82,7 @@ def train_model(data_yaml_path, model_type='yolov8'):
                 logger.error(f"Model file not found at {model_path}")
                 # Try to find if last.pt exists as fallback
                 last_path = os.path.join(
-                    latest_train_dir, "weights", "last.pt")
+                    save_dir, "weights", "last.pt")
                 if os.path.exists(last_path):
                     logger.info(
                         f"best.pt not found, using last.pt at {last_path}")
@@ -95,7 +90,7 @@ def train_model(data_yaml_path, model_type='yolov8'):
                 return None
         else:
             logger.error(
-                "Training directory not found at runs/detect. Training may have failed.")
+                "Training output directory was not created. Training may have failed.")
             return None
 
     except Exception as e:

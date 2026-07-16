@@ -167,3 +167,4 @@ app_logs.txt
 *.tex
 runs/
 *.md
+/yolov8[smlx].pt

@@ -1,5 +1,6 @@
 from src.search_images import search_images
 import logging
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,16 @@ def scrape_similar_images(
     similar_images = []
 
     # Query variations to try - gradually simpler if advanced searches fail
+    selected_domains = []
+    for url in selected_image_urls:
+        domain = urlparse(url).netloc.lower().removeprefix("www.")
+        if domain and domain not in selected_domains:
+            selected_domains.append(domain)
+
+    # Searching domains chosen by the user makes expansion reflect their
+    # selections as well as the original text query.
     query_variations = [
+        *(f"{original_query} site:{domain}" for domain in selected_domains[:3]),
         f"{original_query} filetype:jpg OR filetype:png",  # Specific file types
         f"{original_query} clear photo",
         # Descriptive quality
@@ -65,7 +75,9 @@ def scrape_similar_images(
             continue
 
     # Remove duplicates while preserving order
-    similar_images = list(dict.fromkeys(similar_images))
+    selected_set = set(selected_image_urls)
+    similar_images = [
+        url for url in dict.fromkeys(similar_images) if url not in selected_set]
 
     final_count = min(len(similar_images), total_images_to_download)
     logger.info(

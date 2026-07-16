@@ -212,8 +212,9 @@ async def select(
                 detail="At least 5 selected images must download successfully.")
 
         images_data = [
-            (f"/images/{os.path.basename(path)}", os.path.basename(path))
-            for _, path in local_image_paths
+            (f"/images/{os.path.basename(path)}", os.path.basename(path),
+             selected_images[original_index])
+            for original_index, path in local_image_paths
         ]
 
         return render_template("annotate.html", {
@@ -232,6 +233,7 @@ async def select(
 async def start_training(
         request: Request,
         image_urls: list[str] = Form(...),
+        source_urls: list[str] = Form(...),
         annotations: list[str] = Form(...),
         original_query: str = Form(...)):
     try:
@@ -240,6 +242,7 @@ async def start_training(
         asyncio.create_task(
             run_training(
                 image_urls,
+                source_urls,
                 annotations,
                 original_query))
 
@@ -252,7 +255,7 @@ async def start_training(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def run_training(image_urls, annotations, original_query):
+async def run_training(image_urls, source_urls, annotations, original_query):
     global training_status
     try:
         training_status["status"] = "Downloading"
@@ -263,7 +266,7 @@ async def run_training(image_urls, annotations, original_query):
             labels_dir := os.path.join(
                 "dataset", "train", "labels"))
 
-        if len(image_urls) != len(annotations):
+        if len(image_urls) != len(annotations) or len(image_urls) != len(source_urls):
             raise ValueError("Every selected image must have an annotation payload")
 
         valid_annotations = 0
@@ -301,7 +304,7 @@ async def run_training(image_urls, annotations, original_query):
         similar_images = []
         try:
             similar_images = scrape_similar_images(
-                image_urls,
+                source_urls,
                 original_query,
                 api_key,
                 search_engine_id,
@@ -313,7 +316,7 @@ async def run_training(image_urls, annotations, original_query):
             logger.info("Continuing training with only annotated images")
             training_status["detail"] = "Scraping failed, continuing with annotated images"
 
-        training_status["step"] = 2
+        training_status["step"] = 1
         training_status["status"] = "Downloading"
 
         if similar_images:
@@ -327,20 +330,19 @@ async def run_training(image_urls, annotations, original_query):
         else:
             training_status["detail"] = "No additional images to download, using annotated images only"
 
-        training_status["step"] = 3
+        training_status["step"] = 2
         training_status["status"] = "Annotating"
         training_status["detail"] = "Auto-annotating scraped images"
 
         auto_annotate_images(images_path, labels_dir, target_class=original_query)
 
-        training_status["step"] = 4
+        training_status["step"] = 3
         training_status["status"] = "Training"
         training_status["detail"] = "Training YOLOv8 model (this may take a few minutes)"
 
         data_yaml_path = create_data_yaml(labels_dir, original_query)
 
-        model_path = await asyncio.to_thread(
-            train_model, data_yaml_path, 'yolov8')
+        model_path = await asyncio.to_thread(train_model, data_yaml_path)
 
         if model_path and os.path.exists(model_path):
             training_status["completed"] = True
@@ -369,15 +371,19 @@ async def get_training_status():
 async def results(request: Request, model: str = Query(...)):
     query = training_status.get("query", "Unknown")
 
-    images_count = len([f for f in os.listdir(images_path)
-                       if f.endswith(('.jpg', '.png'))])
-    labels_count = len([f for f in os.listdir(
-        labels_path) if f.endswith('.txt')])
+    image_dirs = [images_path, "dataset/val/images"]
+    label_dirs = [labels_path, "dataset/val/labels"]
+    images_count = sum(len([f for f in os.listdir(path)
+                            if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
+                       for path in image_dirs if os.path.exists(path))
+    labels_count = sum(len([f for f in os.listdir(path) if f.endswith('.txt')])
+                       for path in label_dirs if os.path.exists(path))
 
     stats = {
         "images": images_count,
         "annotations": labels_count,
-        "epochs": 50
+        "epochs": 75,
+        "model": os.getenv("YOLO_MODEL", "yolov8m.pt")
     }
 
     return render_template("results.html", {
@@ -477,6 +483,8 @@ async def debug_api(request: Request):
 async def save_annotations(
         request: Request,
         image_urls: list[str] = Form(...),
+        source_urls: list[str] = Form(...),
         annotations: list[str] = Form(...),
         original_query: str = Form(...)):
-    return await start_training(request, image_urls, annotations, original_query)
+    return await start_training(
+        request, image_urls, source_urls, annotations, original_query)

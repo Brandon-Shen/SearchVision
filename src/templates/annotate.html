@@ -120,11 +120,12 @@ canvas {
     <input type="hidden" name="original_query" value="{{ query }}">
     
     <div class="annotation-container" style="margin-top: 30px;">
-        {% for local_image_path, image_filename in images %}
+        {% for local_image_path, image_filename, source_url in images %}
         <div class="canvas-wrapper">
             <h3>Image {{ loop.index }}</h3>
             <canvas id="canvas_{{ loop.index0 }}" width="300" height="300"></canvas>
             <input type="hidden" name="image_urls" value="{{ local_image_path }}">
+            <input type="hidden" name="source_urls" value="{{ source_url }}">
             <input type="hidden" id="annotation_{{ loop.index0 }}" name="annotations">
             <div style="margin-top: 10px;">
                 <button type="button" class="tool-btn" onclick="clearCanvas({{ loop.index0 }})">Clear</button>
@@ -141,7 +142,7 @@ canvas {
 <script>
 const images = {{ images | tojson }};
 
-{% for local_image_path, image_filename in images %}
+{% for local_image_path, image_filename, source_url in images %}
 (function() {
     const canvas = document.getElementById('canvas_{{ loop.index0 }}');
     const ctx = canvas.getContext('2d');
@@ -190,11 +191,13 @@ const images = {{ images | tojson }};
         const endX = e.clientX - rect.left;
         const endY = e.clientY - rect.top;
         
+        const x = Math.min(startX, endX);
+        const y = Math.min(startY, endY);
         const width = Math.abs(endX - startX);
         const height = Math.abs(endY - startY);
         
         if (width > 10 && height > 10) {
-            rects.push({x: startX, y: startY, width, height});
+            rects.push({x, y, width, height});
         }
         
         saveAnnotation();

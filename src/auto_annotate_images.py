@@ -29,7 +29,9 @@ def auto_annotate_images(image_folder, labels_folder, target_class=None, confide
         labels_folder: Directory where annotation files will be saved
     """
     # Load the pre-trained YOLOv8 model
-    model = YOLO('yolov8n.pt')
+    annotation_model = os.getenv(
+        'YOLO_ANNOTATION_MODEL', os.getenv('YOLO_MODEL', 'yolov8m.pt'))
+    model = YOLO(annotation_model)
 
     os.makedirs(labels_folder, exist_ok=True)
 
@@ -76,28 +78,33 @@ def auto_annotate_images(image_folder, labels_folder, target_class=None, confide
                         boxes = result.boxes.xyxy.cpu().numpy()
                         classes = result.boxes.cls.cpu().numpy().astype(int)
 
-                        with open(label_path, 'w') as f:
-                            for box, class_id in zip(boxes, classes):
-                                detected_name = str(result.names[class_id]).lower()
-                                if allowed_names and detected_name not in allowed_names:
-                                    continue
-                                if len(box) >= 4:
-                                    x_min, y_min, x_max, y_max = box[:4]
+                        lines = []
+                        for box, class_id in zip(boxes, classes):
+                            detected_name = str(result.names[class_id]).lower()
+                            if allowed_names and detected_name not in allowed_names:
+                                continue
+                            if len(box) >= 4:
+                                x_min, y_min, x_max, y_max = box[:4]
+                                x_center = ((x_min + x_max) / 2) / img_width
+                                y_center = ((y_min + y_max) / 2) / img_height
+                                width = (x_max - x_min) / img_width
+                                height = (y_max - y_min) / img_height
+                                lines.append(
+                                    f"0 {x_center:.6f} {y_center:.6f} "
+                                    f"{width:.6f} {height:.6f}\n")
 
-                                    # Calculate YOLO format (normalized)
-                                    x_center = (
-                                        (x_min + x_max) / 2) / img_width
-                                    y_center = (
-                                        (y_min + y_max) / 2) / img_height
-                                    width = (x_max - x_min) / img_width
-                                    height = (y_max - y_min) / img_height
-
-                                    # Class 0 for all objects (single class)
-                                    f.write(
-                                        f"0 {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
-                                    annotated_count += 1
-
-                        logger.info(f"Saved YOLO annotations for {image_file}")
+                        # Do not turn uncertain target misses into false-negative
+                        # training examples. Unlabeled scraped images are excluded
+                        # when the dataset split is assembled.
+                        if lines:
+                            with open(label_path, 'w') as f:
+                                f.writelines(lines)
+                            annotated_count += len(lines)
+                            logger.info(
+                                f"Saved YOLO annotations for {image_file}")
+                        else:
+                            logger.warning(
+                                f"No target objects detected in {image_file}")
                     else:
                         logger.warning(f"No objects detected in {image_file}")
 
