@@ -58,6 +58,14 @@ COCO8 held-out smoke benchmark it achieved 74.0% mAP50-95, compared with 64.1%
 for YOLOv8n in this environment. It requires more memory and is slower; set
 `YOLO_MODEL=yolov8n.pt` to use the lightweight model instead.
 
+A controlled single-class expansion benchmark also compares the five-image seed
+workflow with 30 training images (the seed plus 25 successfully collected and
+correctly labeled images) on one fixed 20-image holdout. With YOLOv8n and 20
+epochs, expansion increased mAP50 from 0.258 to 0.511 and mAP50-95 from 0.203
+to 0.293. Run it with `python scripts/run_expansion_benchmark.py --epochs 20`.
+The benchmark uses reviewed COCO labels to isolate dataset-size value; it does
+not estimate live-web scraping yield or pseudo-label noise.
+
 ## Local setup
 
 ```powershell
