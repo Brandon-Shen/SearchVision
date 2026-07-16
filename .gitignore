@@ -165,6 +165,7 @@ dataset/train/labels
 app_logs.txt
 .aider*
 *.tex
+!main.tex
 runs/
 *.md
 /yolov8[smlx].pt
